@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>aNinja — Workflows</title>
+<!--
+  aNinja Pipeline (Workflows) — operational board UI prototype. v2 (brand-locked).
+  UI ONLY. Renders mock data and simulates the existing backend endpoints.
+  Chrome colours are 100% brand tokens (§1). Done/Off-track use the app's
+  functional green/amber (brand sheet omits them). Status → colour map is LOCKED.
+  Moving a lead is CLICK-FIRST: the ⋮ "Move to" menu is primary; drag is a shortcut.
+-->
+<style>
+/* ───────────────────────── 1. BRAND TOKENS ───────────────────────── */
+:root{
+  /* Brand palette (exact, from aninja.com/utility/style-guide) */
+  --ink:        #09000F;   /* primary text                         */
+  --off-white:  #FEFDFF;   /* page background                      */
+  --muted:      #6C6376;   /* secondary text, captions             */
+  --surface:    #EDEFF4;   /* borders, board canvas, dividers      */
+  --indigo:     #292D55;   /* primary buttons, active nav, focus   */
+  --indigo-hov: #1f2342;
+  --periwinkle: #636AC3;   /* secondary accent, In-progress, Manual */
+  --lightblue:  #80A8FF;   /* optional info accent                 */
+  --red:        #F53333;   /* Terminal status, destructive         */
+  --indigo-tint:#ECEDF7;   /* active nav bg, In-progress pill bg, avatar bg, segmented-active */
+
+  /* derived neutrals */
+  --white:      #FFFFFF;
+  --surface-2:  #F5F6FA;   /* subtle fills (between surface & white) */
+  --border-strong:#D7DAE4; /* input borders, hover borders         */
+  --lane:       #F6F7FB;   /* column lane surface (canvas → lane → card tiers) */
+  --lane-line:  #E4E6EF;   /* lane / card hairline borders          */
+
+  /* elevation scale (consistent shadow system) */
+  --elev-1: 0 1px 2px rgba(9,0,15,.05), 0 1px 1px rgba(9,0,15,.03);
+  --elev-2: 0 2px 6px rgba(9,0,15,.07), 0 1px 2px rgba(9,0,15,.04);
+  --elev-3: 0 10px 24px rgba(9,0,15,.12), 0 2px 6px rgba(9,0,15,.06);
+
+  /* Status → colour map (LOCKED). role / pill-bg / pill-text */
+  --done:#1E9E73;       --done-bg:#E4F4EC;       --done-tx:#157A57;       /* functional green */
+  --progress:#636AC3;   --progress-bg:#ECEDF7;   --progress-tx:#434A9E;   /* brand periwinkle */
+  --offtrack:#E0922A;   --offtrack-bg:#FBF0DC;   --offtrack-tx:#8A5E10;   /* functional amber */
+  --terminal:#F53333;   --terminal-bg:#FDE3E3;   --terminal-tx:#C42121;   /* brand red */
+  --notreached:#6C6376; --notreached-bg:#EDEFF4; --notreached-tx:#6C6376; /* brand muted */
+
+  --r: 5px;                /* 5px everywhere */
+  --col-w: 280px;
+}
+
+/* Gilroy first; graceful fallback so the prototype reads correctly without the licensed font. */
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+body{
+  font-family:'Gilroy','Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  font-weight:400; font-size:13px; line-height:1.5;
+  color:var(--ink); background:var(--off-white);
+  -webkit-font-smoothing:antialiased;
+}
+button{ font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+:focus-visible{ outline:2px solid var(--indigo); outline-offset:2px; border-radius:var(--r); }
+svg{ display:block; }
+::-webkit-scrollbar{ height:10px; width:10px; }
+::-webkit-scrollbar-thumb{ background:#cdd2de; border-radius:99px; border:2px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover{ background:#b7bdcc; background-clip:content-box; }
+
+/* ───────────────────────── APP SHELL ───────────────────────── */
+.app{ display:grid; grid-template-columns:236px 1fr; height:100vh; overflow:hidden; }
+
+/* Sidebar */
+.sidebar{ background:var(--white); border-right:1px solid var(--surface); display:flex; flex-direction:column; overflow:hidden; }
+.brand{ display:flex; align-items:center; gap:8px; padding:16px 16px 12px; height:56px; }
+.brand svg.logo-svg{ height:30px; width:auto; display:block; }
+.nav{ flex:1; overflow-y:auto; padding:8px 12px 16px; }
+.nav-label{ font-size:10px; font-weight:600; letter-spacing:.9px; text-transform:uppercase; color:var(--muted); padding:16px 8px 4px; }
+.nav-item{ display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; border-radius:var(--r); color:var(--ink); font-size:13px; font-weight:500; position:relative; text-align:left; }
+.nav-item .ico{ color:var(--muted); flex:0 0 auto; }
+.nav-item .badge{ margin-left:auto; font-size:11px; font-weight:500; color:var(--muted); background:var(--surface-2); border:1px solid var(--surface); border-radius:99px; padding:0 7px; }
+.nav-item:hover{ background:var(--surface-2); }
+.nav-item.active{ color:var(--indigo); background:var(--indigo-tint); font-weight:600; }
+.nav-item.active::before{ content:""; position:absolute; left:0; top:6px; bottom:6px; width:3px; border-radius:0 var(--r) var(--r) 0; background:var(--indigo); }
+.nav-item.active .ico{ color:var(--indigo); }
+.nav-item.sub{ padding-left:34px; }
+
+.userbar{ border-top:1px solid var(--surface); padding:12px 16px; display:flex; align-items:center; gap:8px; }
+.userbar .av{ width:28px; height:28px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); display:grid; place-items:center; font-weight:600; font-size:11px; }
+.userbar .meta{ line-height:1.25; }
+.userbar .meta b{ font-weight:600; font-size:12px; display:block; }
+.userbar .meta span{ font-size:11px; color:var(--muted); }
+
+/* Main column */
+.main{ display:flex; flex-direction:column; overflow:hidden; }
+
+/* Top bar */
+.topbar{ height:52px; flex:0 0 auto; background:var(--white); border-bottom:1px solid var(--surface); display:flex; align-items:center; gap:12px; padding:0 24px; }
+.topbar .crumbs{ font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.topbar .crumbs b{ color:var(--ink); font-weight:600; }
+.topbar .right{ margin-left:auto; display:flex; align-items:center; gap:12px; color:var(--muted); }
+.topbar .icobtn{ width:32px; height:32px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.topbar .icobtn:hover{ background:var(--surface-2); color:var(--ink); }
+
+/* ───────────────────────── PAGE HEADER ───────────────────────── */
+.page-header{ flex:0 0 auto; background:var(--off-white); padding:16px 24px 12px; display:flex; align-items:center; gap:12px; z-index:30; }
+.page-title{ font-size:18px; font-weight:600; line-height:1.3; }
+.lead-caption{ font-size:12px; color:var(--muted); margin-top:2px; }
+
+/* Workflow selector */
+.wf-select{ position:relative; }
+.wf-trigger{ display:flex; align-items:center; gap:10px; padding:6px 10px; border:1px solid var(--border-strong); background:var(--white); border-radius:var(--r); min-width:230px; }
+.wf-trigger:hover{ border-color:var(--periwinkle); }
+.wf-trigger .wf-name{ font-size:14px; font-weight:600; }
+.wf-trigger .chev{ margin-left:auto; color:var(--muted); transition:transform .15s; }
+.wf-select.open .chev{ transform:rotate(180deg); }
+.status-tag{ font-size:11px; font-weight:500; padding:1px 8px; border-radius:99px; }
+.status-tag.live{ color:var(--done-tx); background:var(--done-bg); }
+.status-tag.draft{ color:var(--notreached-tx); background:var(--notreached-bg); }
+
+.wf-menu{ position:absolute; top:calc(100% + 6px); left:0; min-width:280px; background:var(--white); border:1px solid var(--surface); border-radius:var(--r); box-shadow:0 12px 32px rgba(9,0,15,.14); padding:6px; z-index:60; display:none; }
+.wf-select.open .wf-menu{ display:block; }
+.wf-opt{ display:flex; align-items:center; gap:10px; width:100%; padding:9px 10px; border-radius:var(--r); text-align:left; }
+.wf-opt:hover{ background:var(--surface-2); }
+.wf-opt.sel{ background:var(--indigo-tint); }
+.wf-opt .wf-opt-name{ font-size:13px; font-weight:500; }
+.wf-opt .wf-opt-meta{ font-size:11px; color:var(--muted); }
+.wf-opt .check{ margin-left:auto; color:var(--indigo); opacity:0; }
+.wf-opt.sel .check{ opacity:1; }
+
+/* header right cluster */
+.ph-actions{ margin-left:auto; display:flex; align-items:center; gap:8px; }
+.segmented{ display:inline-flex; background:var(--surface); border:1px solid var(--surface); border-radius:var(--r); padding:2px; }
+.segmented button{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--muted); padding:5px 12px; border-radius:3px; }
+.segmented button.active{ background:var(--indigo-tint); color:var(--indigo); }
+.icobtn-bordered{ width:34px; height:34px; border:1px solid var(--border-strong); background:var(--white); border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.icobtn-bordered:hover{ border-color:var(--periwinkle); color:var(--ink); }
+.btn-primary{ display:inline-flex; align-items:center; gap:7px; background:var(--indigo); color:#fff; font-size:13px; font-weight:500; padding:8px 14px; border-radius:var(--r); }
+.btn-primary:hover{ background:var(--indigo-hov); }
+
+/* ───────────────────────── BOARD CANVAS ───────────────────────── */
+.board-wrap{ flex:1; overflow:hidden; padding:0 24px 16px; display:flex; flex-direction:column; }
+.board-canvas{ flex:1; background:var(--surface); border-radius:var(--r); padding:12px; overflow-x:auto; overflow-y:hidden; position:relative;
+  background-image:radial-gradient(circle, rgba(9,0,15,.045) 1px, transparent 1.4px); background-size:22px 22px; background-position:-1px -1px; }
+.board{ display:flex; gap:12px; align-items:stretch; height:100%; }
+
+/* edge auto-scroll hint zones (visual only while dragging) */
+.board-canvas.dragging-active .edge{ position:absolute; top:0; bottom:0; width:48px; z-index:20; pointer-events:none; opacity:0; transition:opacity .12s; }
+.board-canvas.dragging-active .edge.left{ left:0; background:linear-gradient(90deg, rgba(99,106,195,.18), transparent); }
+.board-canvas.dragging-active .edge.right{ right:0; background:linear-gradient(270deg, rgba(99,106,195,.18), transparent); }
+.board-canvas.dragging-active .edge.hot{ opacity:1; }
+
+/* Column — soft lane (canvas → lane → card layering) */
+.col{ flex:0 0 var(--col-w); width:var(--col-w); display:flex; flex-direction:column; height:100%; max-height:100%;
+  background:var(--lane); border:1px solid var(--lane-line); border-radius:var(--r); box-shadow:var(--elev-1); }
+.col-head{ position:sticky; top:0; z-index:10; background:var(--lane); padding:11px 10px 9px; border-bottom:1px solid var(--lane-line); border-radius:var(--r) var(--r) 0 0; }
+.col-head-row{ display:flex; align-items:center; gap:8px; }
+.step-no{ flex:0 0 auto; width:18px; height:18px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); font-size:10px; font-weight:600; display:grid; place-items:center; font-variant-numeric:tabular-nums; }
+.col-name{ font-size:14px; font-weight:600; letter-spacing:-.1px; }
+.col-count{ font-size:11px; color:var(--muted); font-weight:600; background:var(--surface); border:1px solid var(--lane-line); border-radius:99px; min-width:20px; text-align:center; padding:1px 6px; font-variant-numeric:tabular-nums; }
+.col-menu-btn{ margin-left:auto; width:24px; height:24px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.col-menu-btn:hover{ background:rgba(9,0,15,.06); color:var(--ink); }
+.health-chip{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:500; padding:2px 8px; border-radius:99px; margin-top:8px; }
+.health-chip .dot{ width:6px; height:6px; border-radius:99px; }
+.health-chip.ontrack{ color:var(--done-tx); background:var(--done-bg); } .health-chip.ontrack .dot{ background:var(--done); }
+.health-chip.offtrack{ color:var(--offtrack-tx); background:var(--offtrack-bg); } .health-chip.offtrack .dot{ background:var(--offtrack); }
+.threshold-hint{ display:none; margin-top:6px; font-size:11px; color:var(--muted); background:var(--white); border:1px dashed var(--border-strong); border-radius:var(--r); padding:5px 8px; }
+.col.over-threshold .threshold-hint{ display:flex; align-items:center; gap:6px; }
+.threshold-hint button{ color:var(--indigo); font-weight:600; text-decoration:underline; }
+
+.col-body{ flex:1; min-height:0; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:9px; border-radius:0 0 var(--r) var(--r); transition:background .12s; }
+/* drag-over target — large drop zone, brand indigo-tint highlight */
+.col-body.drag-over{ background:var(--indigo-tint); outline:2px dashed var(--periwinkle); outline-offset:-4px; }
+.col-empty{ display:none; flex:1; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:var(--muted); font-size:12px; border:1.5px dashed var(--border-strong); border-radius:var(--r); padding:24px 12px; text-align:center; min-height:120px; }
+.col-empty .ei{ width:34px; height:34px; border-radius:99px; background:var(--surface); display:grid; place-items:center; color:var(--border-strong); }
+.col-body.is-empty .col-empty{ display:flex; }
+/* insertion ghost shown while dragging over a column */
+.drop-ghost{ height:42px; flex:0 0 auto; border:1.5px dashed var(--periwinkle); background:rgba(99,106,195,.08); border-radius:var(--r); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500; color:var(--periwinkle); }
+
+/* Terminal tray */
+.terminal-tray{ margin-top:4px; flex:0 0 auto; }
+.tray-head{ display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; background:var(--white); border:1px solid var(--lane-line); border-radius:var(--r); font-size:12px; font-weight:500; color:var(--muted); box-shadow:var(--elev-1); }
+.tray-head:hover{ background:var(--surface-2); }
+.tray-head .dot{ width:7px; height:7px; border-radius:99px; background:var(--terminal); }
+.tray-head .chev{ margin-left:auto; transition:transform .15s; }
+.terminal-tray.open .tray-head .chev{ transform:rotate(180deg); }
+.tray-body{ display:none; flex-direction:column; gap:8px; padding-top:8px; }
+.terminal-tray.open .tray-body{ display:flex; }
+
+/* ───────────────────────── CARD (§5) ───────────────────────── */
+.card{
+  position:relative; background:var(--white); border:1px solid var(--lane-line);
+  border-radius:var(--r); padding:10px 11px 10px 13px; overflow:hidden;   /* clip status bar to corner */
+  box-shadow:var(--elev-1); flex:0 0 auto;   /* never shrink — overflow scrolls the column instead */
+  transition:box-shadow .14s ease, border-color .14s, transform .1s ease;
+}
+.card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }  /* 3px status bar, left edge */
+.card.s-done::before{ background:var(--done); }
+.card.s-progress::before{ background:var(--progress); }
+.card.s-offtrack::before{ background:var(--offtrack); }
+.card.s-terminal::before{ background:var(--terminal); }
+.card.s-notreached::before{ background:var(--notreached); }
+.card:hover{ box-shadow:var(--elev-3); border-color:var(--border-strong); transform:translateY(-1px); }
+.card.selected{ border-color:var(--indigo); box-shadow:0 0 0 2px var(--indigo-tint), var(--elev-2); }
+.card.menu-open{ border-color:var(--periwinkle); box-shadow:0 0 0 2px var(--indigo-tint), var(--elev-2); }
+.card.dragging{ opacity:.5; box-shadow:var(--elev-3); transform:rotate(1.5deg); }
+
+/* visible drag handle (hover) — drag is a power shortcut, not the primary path */
+.drag-grip{ position:absolute; top:3px; left:50%; transform:translateX(-50%); color:var(--border-strong); opacity:0; cursor:grab; padding:2px 8px; transition:opacity .12s; }
+.card:hover .drag-grip{ opacity:1; }
+.drag-grip:active{ cursor:grabbing; }
+
+.card-l1{ display:flex; align-items:center; gap:6px; }
+.card-name{ font-size:13px; font-weight:500; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.avatar{ flex:0 0 auto; width:20px; height:20px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); display:grid; place-items:center; font-size:9.5px; font-weight:600; box-shadow:0 0 0 2px var(--white); border:1px solid rgba(41,45,85,.08); }
+/* ⋮ move control — PRIMARY move path */
+.move-btn{ flex:0 0 auto; width:22px; height:22px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.move-btn:hover{ background:var(--surface); color:var(--ink); }
+.card-l2{ font-size:12px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card-l3{ display:flex; align-items:center; gap:6px; margin-top:8px; }
+
+/* status pill — semantic colour, never flat */
+.pill{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:500; padding:2px 8px; border-radius:99px; white-space:nowrap; }
+.pill .dot{ width:6px; height:6px; border-radius:99px; }
+.pill.s-done{ color:var(--done-tx); background:var(--done-bg); } .pill.s-done .dot{ background:var(--done); }
+.pill.s-progress{ color:var(--progress-tx); background:var(--progress-bg); } .pill.s-progress .dot{ background:var(--progress); }
+.pill.s-offtrack{ color:var(--offtrack-tx); background:var(--offtrack-bg); } .pill.s-offtrack .dot{ background:var(--offtrack); }
+.pill.s-terminal{ color:var(--terminal-tx); background:var(--terminal-bg); } .pill.s-terminal .dot{ background:var(--terminal); }
+.pill.s-notreached{ color:var(--notreached-tx); background:var(--notreached-bg); } .pill.s-notreached .dot{ background:var(--notreached); }
+button.pill{ cursor:pointer; } button.pill:hover{ filter:brightness(.97); }
+
+.card-time{ margin-left:auto; font-size:11px; color:var(--muted); white-space:nowrap; }
+
+/* conditional indicators (amber is reserved for Off-track only) */
+.tag-manual{ display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:500; color:var(--periwinkle); background:var(--indigo-tint); padding:2px 7px; border-radius:99px; }
+.chip-task{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:500; color:var(--muted); background:var(--surface); padding:2px 7px; border-radius:99px; }
+.chip-task.overdue{ color:var(--terminal-tx); background:var(--terminal-bg); }
+.unread{ width:7px; height:7px; border-radius:99px; background:var(--indigo); flex:0 0 auto; }
+.meta-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:7px; }
+
+/* hover quick-actions */
+.quick{ display:none; gap:6px; margin-top:9px; padding-top:8px; border-top:1px solid var(--surface); }
+.card:hover .quick{ display:flex; }
+.qbtn{ flex:1; display:flex; align-items:center; justify-content:center; gap:5px; font-size:11px; font-weight:500; color:var(--muted); border:1px solid var(--surface); border-radius:var(--r); padding:5px 0; }
+.qbtn:hover{ color:var(--periwinkle); border-color:var(--periwinkle); background:var(--indigo-tint); }
+
+/* Add-step ghost column */
+.add-col{ flex:0 0 220px; width:220px; }
+.add-col button{ width:100%; height:100%; min-height:120px; border:1.5px dashed var(--border-strong); background:rgba(255,255,255,.35); border-radius:var(--r); color:var(--muted); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; transition:.14s; }
+.add-col button .ei{ width:38px; height:38px; border-radius:99px; background:var(--white); border:1px solid var(--lane-line); display:grid; place-items:center; color:var(--muted); transition:.14s; box-shadow:var(--elev-1); }
+.add-col button .add-t{ font-size:13px; font-weight:600; color:var(--ink); }
+.add-col button .add-sub{ font-size:11px; color:var(--muted); }
+.add-col button:hover{ border-color:var(--periwinkle); background:rgba(99,106,195,.05); }
+.add-col button:hover .ei{ border-color:var(--periwinkle); color:var(--periwinkle); background:var(--indigo-tint); }
+.add-col button:hover .add-t{ color:var(--indigo); }
+
+/* ───────────────────────── LIST VIEW ───────────────────────── */
+.list-view{ flex:1; background:var(--white); border:1px solid var(--surface); border-radius:var(--r); overflow:auto; }
+.list-section + .list-section{ border-top:1px solid var(--surface); }
+.list-shead{ position:sticky; top:0; z-index:5; background:var(--surface-2); border-bottom:1px solid var(--surface); padding:9px 16px; display:flex; align-items:center; gap:10px; }
+.list-shead .nm{ font-size:14px; font-weight:500; }
+.list-shead .ct{ font-size:12px; color:var(--muted); }
+.list-row{ display:grid; grid-template-columns:14px 1.6fr 130px 1fr 90px 80px 28px; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--surface); font-size:13px; }
+.list-row:last-child{ border-bottom:none; }
+.list-row:hover{ background:var(--surface-2); }
+.list-row .sdot{ width:9px; height:9px; border-radius:99px; }
+.sdot.s-done{ background:var(--done);} .sdot.s-progress{ background:var(--progress);} .sdot.s-offtrack{ background:var(--offtrack);} .sdot.s-terminal{ background:var(--terminal);} .sdot.s-notreached{ background:var(--notreached);}
+.list-row .lname{ font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.list-row .lcompany{ font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.list-row .ltime{ font-size:12px; color:var(--muted); text-align:right; }
+.list-row .lowner{ display:flex; }
+.list-row .lmove{ width:22px; height:22px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.list-row .lmove:hover{ background:var(--surface); color:var(--ink); }
+
+/* ───────────────────────── SKELETON / EMPTY / ERROR / DRAFT ───────────────────────── */
+.state-panel{ flex:1; display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; color:var(--muted); background:var(--surface); border-radius:var(--r); }
+.state-panel .big{ font-size:16px; font-weight:600; color:var(--ink); }
+.state-panel .sub{ font-size:13px; max-width:380px; }
+
+.skeleton .board{ pointer-events:none; }
+.sk-col{ flex:0 0 var(--col-w); }
+.sk-bar{ background:linear-gradient(90deg,#e3e6ee 25%,#f1f2f7 50%,#e3e6ee 75%); background-size:200% 100%; animation:sh 1.2s infinite; border-radius:var(--r); }
+@keyframes sh{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+.sk-card{ height:74px; margin-bottom:8px; }
+
+/* ───────────────────────── LEAD DETAIL DRAWER ───────────────────────── */
+.scrim{ position:fixed; inset:0; background:rgba(9,0,15,.32); opacity:0; pointer-events:none; transition:opacity .18s; z-index:80; }
+.scrim.show{ opacity:1; pointer-events:auto; }
+.drawer{ position:fixed; top:0; right:0; height:100%; width:440px; max-width:92vw; background:var(--white); box-shadow:-12px 0 40px rgba(9,0,15,.16); transform:translateX(100%); transition:transform .22s cubic-bezier(.4,0,.2,1); z-index:90; display:flex; flex-direction:column; }
+.drawer.show{ transform:translateX(0); }
+.drawer-head{ padding:16px 24px; border-bottom:1px solid var(--surface); display:flex; align-items:flex-start; gap:12px; }
+.drawer-head .av{ width:40px; height:40px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); display:grid; place-items:center; font-weight:600; font-size:14px; }
+.drawer-head h2{ font-size:16px; font-weight:600; }
+.drawer-head .sub{ font-size:12px; color:var(--muted); }
+.drawer-head .x{ margin-left:auto; width:30px; height:30px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.drawer-head .x:hover{ background:var(--surface-2); color:var(--ink); }
+.drawer-body{ flex:1; overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:24px; }
+.dsec h3{ font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.dsec h3 .wf-pill{ font-size:11px; font-weight:500; color:var(--muted); background:var(--surface-2); border:1px solid var(--surface); padding:1px 8px; border-radius:99px; }
+
+/* horizontal stepper — one per workflow the lead is in */
+.stepper{ display:flex; align-items:flex-start; overflow-x:auto; padding-bottom:6px; }
+.step{ flex:0 0 auto; display:flex; flex-direction:column; align-items:center; min-width:72px; position:relative; }
+.step .node{ width:22px; height:22px; border-radius:99px; display:grid; place-items:center; border:2px solid var(--border-strong); background:var(--white); z-index:2; }
+.step .node .in{ width:8px; height:8px; border-radius:99px; background:var(--border-strong); }
+.step.done .node{ border-color:var(--done); background:var(--done); } .step.done .node .in{ background:#fff; width:6px; height:6px; }
+.step.current.s-progress .node{ border-color:var(--progress);} .step.current.s-offtrack .node{ border-color:var(--offtrack);} .step.current.s-terminal .node{ border-color:var(--terminal);} .step.current.s-done .node{ border-color:var(--done);}
+.step.current.s-progress .node .in{ background:var(--progress);} .step.current.s-offtrack .node .in{ background:var(--offtrack);} .step.current.s-terminal .node .in{ background:var(--terminal);} .step.current.s-done .node .in{ background:var(--done);}
+.step.notreached .node{ border-color:var(--surface); } .step.notreached .node .in{ background:var(--surface); }
+.step .connector{ position:absolute; top:11px; left:50%; width:100%; height:2px; background:var(--border-strong); z-index:1; }
+.step.done .connector{ background:var(--done); }
+.step:last-child .connector{ display:none; }
+.step .lbl{ font-size:10.5px; margin-top:7px; text-align:center; color:var(--muted); line-height:1.25; max-width:80px; }
+.step.current .lbl{ color:var(--ink); font-weight:600; }
+
+.timeline{ display:flex; flex-direction:column; gap:14px; }
+.tl-item{ display:flex; gap:10px; font-size:12px; }
+.tl-item .tdot{ width:8px; height:8px; border-radius:99px; margin-top:5px; flex:0 0 auto; background:var(--periwinkle); }
+.tl-item .tmeta{ color:var(--muted); font-size:11px; }
+
+/* ───────────────────────── MENUS / TOAST / MODAL ───────────────────────── */
+.popover{ position:fixed; min-width:210px; max-width:260px; background:var(--white); border:1px solid var(--surface); border-radius:var(--r); box-shadow:0 12px 32px rgba(9,0,15,.16); padding:6px; z-index:120; display:none; max-height:60vh; overflow-y:auto; }
+.popover.show{ display:block; }
+.pop-item{ display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border-radius:var(--r); font-size:13px; text-align:left; }
+.pop-item:hover{ background:var(--surface-2); }
+.pop-item.cur{ color:var(--muted); cursor:default; }
+.pop-item.cur:hover{ background:transparent; }
+.pop-item .stepdot{ width:7px; height:7px; border-radius:99px; background:var(--surface); flex:0 0 auto; }
+.pop-item.danger{ color:var(--terminal-tx); }
+.pop-item.danger:hover{ background:var(--terminal-bg); }
+.pop-sep{ height:1px; background:var(--surface); margin:5px 0; }
+.pop-label{ font-size:11px; color:var(--muted); padding:6px 10px 4px; font-weight:600; letter-spacing:.4px; }
+
+/* mobile bottom-sheet variant for the move/status menu */
+.popover.sheet{ left:0 !important; right:0; top:auto !important; bottom:0; width:100%; max-width:100%; min-width:0; border-radius:12px 12px 0 0; padding:10px 10px 20px; box-shadow:0 -12px 40px rgba(9,0,15,.2); animation:sheetUp .2s ease; }
+.popover.sheet .pop-item{ padding:12px 12px; font-size:14px; }
+@keyframes sheetUp{ from{ transform:translateY(100%);} to{ transform:translateY(0);} }
+.sheet-grip{ display:none; width:36px; height:4px; border-radius:99px; background:var(--border-strong); margin:2px auto 8px; }
+.popover.sheet .sheet-grip{ display:block; }
+
+.toast-wrap{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.toast{ display:flex; align-items:center; gap:10px; background:var(--indigo); color:#fff; font-size:13px; padding:10px 14px; border-radius:var(--r); box-shadow:0 8px 24px rgba(9,0,15,.28); animation:rise .2s ease; max-width:480px; }
+.toast.err{ background:var(--red); }
+.toast .undo{ color:#fff; font-weight:600; text-decoration:underline; margin-left:4px; }
+@keyframes rise{ from{ transform:translateY(8px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+
+/* dev / states demo control */
+.dev{ position:fixed; bottom:16px; right:16px; z-index:150; }
+.dev summary{ list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; color:var(--muted); background:var(--white); border:1px solid var(--surface); border-radius:99px; padding:6px 12px; box-shadow:0 4px 14px rgba(9,0,15,.1); }
+.dev summary::-webkit-details-marker{ display:none; }
+.dev[open] summary{ color:var(--ink); }
+.dev-panel{ position:absolute; bottom:40px; right:0; width:240px; background:var(--white); border:1px solid var(--surface); border-radius:var(--r); box-shadow:0 12px 32px rgba(9,0,15,.16); padding:10px; }
+.dev-panel .dl{ font-size:10px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); padding:6px 4px 4px; }
+.dev-panel button{ width:100%; text-align:left; font-size:12px; padding:7px 9px; border-radius:var(--r); }
+.dev-panel button:hover{ background:var(--surface-2); }
+.dev-panel label{ display:flex; align-items:center; gap:8px; font-size:12px; padding:7px 9px; cursor:pointer; }
+
+.modal-card{ position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:420px; max-width:92vw; background:var(--white); border-radius:var(--r); box-shadow:0 20px 60px rgba(9,0,15,.3); z-index:130; padding:24px; display:none; }
+.modal-card.show{ display:block; }
+.modal-card h3{ font-size:15px; font-weight:600; margin-bottom:6px; }
+.modal-card p{ font-size:13px; color:var(--muted); margin-bottom:16px; }
+.field{ margin-bottom:14px; }
+.field label{ font-size:12px; font-weight:500; display:block; margin-bottom:6px; }
+.field input, .field select{ width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border-strong); border-radius:var(--r); background:var(--white); color:var(--ink); }
+.field input:focus, .field select:focus{ outline:none; border-color:var(--indigo); box-shadow:0 0 0 3px var(--indigo-tint); }
+.modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
+.btn-ghost{ font-size:13px; font-weight:500; padding:8px 14px; border-radius:var(--r); color:var(--ink); border:1px solid var(--border-strong); background:var(--white); }
+.btn-ghost:hover{ background:var(--surface-2); }
+
+/* ───── sticky column header lifts as cards scroll under it ───── */
+.col-head{ transition:box-shadow .2s ease, border-color .2s ease; }
+.col.scrolled .col-head{ box-shadow:0 8px 16px -8px rgba(9,0,15,.22); border-bottom-color:transparent; }
+
+/* ───── header search box ───── */
+.search-box{ display:flex; align-items:center; gap:6px; width:0; opacity:0; overflow:hidden; border:1px solid var(--border-strong); border-radius:var(--r); background:var(--white); padding:0; transition:width .24s cubic-bezier(.4,0,.2,1), opacity .18s ease, padding .24s ease; }
+.search-box.open{ width:230px; opacity:1; padding:0 8px; }
+.search-box input{ border:none; outline:none; background:none; font-family:inherit; font-size:13px; width:100%; padding:7px 0; color:var(--ink); }
+.search-box .sx{ color:var(--muted); display:grid; place-items:center; flex:0 0 auto; }
+.search-box #searchClear{ cursor:pointer; } .search-box #searchClear:hover{ color:var(--ink); }
+.icobtn-bordered.on{ border-color:var(--periwinkle); color:var(--indigo); background:var(--indigo-tint); }
+.filter-dot{ position:absolute; top:-3px; right:-3px; width:9px; height:9px; border-radius:99px; background:var(--periwinkle); border:2px solid var(--off-white); }
+
+/* ───── nav placeholder ───── */
+.nav-placeholder{ flex:1; display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; color:var(--muted); background:var(--surface); border-radius:var(--r);
+  background-image:radial-gradient(circle, rgba(9,0,15,.045) 1px, transparent 1.4px); background-size:22px 22px; }
+.nav-placeholder .pic{ width:56px; height:56px; border-radius:var(--r); background:var(--white); border:1px solid var(--lane-line); display:grid; place-items:center; color:var(--periwinkle); box-shadow:var(--elev-1); }
+.nav-placeholder .big{ font-size:16px; font-weight:600; color:var(--ink); }
+.nav-placeholder .sub{ font-size:13px; max-width:360px; }
+
+/* ───── setup drawer ───── */
+.setup-sec h3{ font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px; }
+.step-edit{ display:flex; align-items:center; gap:8px; padding:7px 8px; background:var(--white); border:1px solid var(--lane-line); border-radius:var(--r); margin-bottom:8px; box-shadow:var(--elev-1); transition:box-shadow .15s, border-color .15s; }
+.step-edit.flash{ border-color:var(--periwinkle); box-shadow:0 0 0 3px var(--indigo-tint); }
+.step-edit .sno{ width:20px; height:20px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); font-size:10px; font-weight:600; display:grid; place-items:center; flex:0 0 auto; }
+.step-edit input{ flex:1; border:1px solid transparent; background:transparent; font-family:inherit; font-size:13px; font-weight:500; padding:5px 6px; border-radius:var(--r); color:var(--ink); min-width:0; }
+.step-edit input:hover{ background:var(--surface-2); }
+.step-edit input:focus{ outline:none; background:var(--white); border-color:var(--indigo); box-shadow:0 0 0 3px var(--indigo-tint); }
+.step-edit .cnt{ font-size:11px; color:var(--muted); white-space:nowrap; }
+.step-edit .ord{ display:flex; flex-direction:column; gap:1px; }
+.step-edit .ico-btn{ width:24px; height:18px; display:grid; place-items:center; color:var(--muted); border-radius:4px; }
+.step-edit .ico-btn:hover:not(:disabled){ background:var(--surface-2); color:var(--ink); }
+.step-edit .ico-btn:disabled{ opacity:.3; cursor:default; }
+.step-edit .del{ width:26px; height:26px; }
+.step-edit .del:hover{ color:var(--terminal); background:var(--terminal-bg); }
+.toggle{ cursor:pointer; }
+.switch{ width:38px; height:22px; border-radius:99px; background:var(--border-strong); position:relative; transition:.2s; flex:0 0 auto; display:block; }
+.switch::after{ content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:99px; background:#fff; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+.switch.on{ background:var(--done); } .switch.on::after{ left:18px; }
+
+/* ───── help / notifications popover ───── */
+.notif{ display:flex; gap:10px; padding:9px 10px; border-radius:var(--r); }
+.notif:hover{ background:var(--surface-2); }
+.notif .nd{ width:8px; height:8px; border-radius:99px; background:var(--periwinkle); margin-top:5px; flex:0 0 auto; }
+.notif.read .nd{ background:var(--border-strong); }
+.notif .nt{ font-size:12px; line-height:1.35; } .notif .nm{ font-size:11px; color:var(--muted); }
+
+/* ───── motion ───── */
+@keyframes fadeUp{ from{ opacity:0; transform:translateY(7px); } to{ opacity:1; transform:none; } }
+.view-enter{ animation:fadeUp .24s ease both; }
+.card.enter{ animation:fadeUp .28s ease both; }
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
+}
+
+/* ───── setup drawer: clickable step row ───── */
+.step-open{ flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; padding:3px 6px; border-radius:var(--r); min-width:0; }
+.step-open:hover{ background:var(--surface-2); }
+.step-open .se-name{ font-size:13px; font-weight:500; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }
+.step-open .se-sub{ font-size:11px; color:var(--muted); }
+
+/* ───── Add/Edit Step modal (large) ───── */
+.modal-card.lg{ width:540px; max-width:94vw; max-height:88vh; padding:0; display:none; flex-direction:column; overflow:hidden; }
+.modal-card.lg.show{ display:flex; }
+.modal-head{ padding:16px 22px; border-bottom:1px solid var(--surface); display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+.modal-head .mh-ico{ width:34px; height:34px; border-radius:var(--r); background:var(--indigo-tint); color:var(--indigo); display:grid; place-items:center; flex:0 0 auto; }
+.modal-head h3{ font-size:16px; font-weight:600; }
+.modal-head .x{ margin-left:auto; width:30px; height:30px; border-radius:var(--r); display:grid; place-items:center; color:var(--muted); }
+.modal-head .x:hover{ background:var(--surface-2); color:var(--ink); }
+.modal-scroll{ padding:18px 22px; overflow-y:auto; flex:1; }
+.modal-foot{ padding:14px 22px; border-top:1px solid var(--surface); display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.cfg-head{ display:flex; align-items:center; margin:18px 0 10px; }
+.add-status{ margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--indigo); padding:5px 9px; border-radius:var(--r); }
+.add-status:hover{ background:var(--indigo-tint); }
+.field-err{ font-size:11px; color:var(--terminal-tx); margin-top:5px; }
+.field input.err{ border-color:var(--terminal); box-shadow:0 0 0 3px var(--terminal-bg); }
+.save-banner{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--terminal-tx); background:var(--terminal-bg); border:1px solid #f6caca; border-radius:var(--r); padding:9px 11px; margin-bottom:14px; }
+.save-banner .bdot{ width:8px; height:8px; border-radius:99px; background:var(--terminal); flex:0 0 auto; }
+
+/* status config rows */
+.status-cfg{ display:flex; flex-direction:column; gap:8px; }
+.status-row{ display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid var(--lane-line); border-radius:var(--r); background:var(--white); box-shadow:var(--elev-1); transition:box-shadow .14s, border-color .14s, opacity .12s; }
+.status-row.dragging{ opacity:.5; }
+.status-row.drag-over{ border-color:var(--periwinkle); box-shadow:0 0 0 3px var(--indigo-tint); }
+.status-row .grip{ cursor:grab; color:var(--border-strong); display:grid; place-items:center; flex:0 0 auto; }
+.status-row .grip:active{ cursor:grabbing; }
+.status-row .sw{ width:14px; height:14px; border-radius:4px; flex:0 0 auto; }
+.status-row input.lbl{ flex:1; min-width:0; border:1px solid var(--lane-line); border-radius:var(--r); padding:7px 9px; font-family:inherit; font-size:13px; color:var(--ink); }
+.status-row input.lbl:focus{ outline:none; border-color:var(--indigo); box-shadow:0 0 0 3px var(--indigo-tint); }
+.status-row input.lbl.err{ border-color:var(--terminal); box-shadow:0 0 0 3px var(--terminal-bg); }
+.cat-select{ position:relative; flex:0 0 auto; }
+.cat-trigger{ display:flex; align-items:center; gap:7px; min-width:142px; border:1px solid var(--lane-line); border-radius:var(--r); padding:7px 9px; font-size:12px; font-weight:500; color:var(--ink); background:var(--white); }
+.cat-trigger:hover{ border-color:var(--border-strong); }
+.cat-trigger.err{ border-color:var(--terminal); box-shadow:0 0 0 3px var(--terminal-bg); }
+.cat-trigger .dot{ width:9px; height:9px; border-radius:99px; flex:0 0 auto; }
+.cat-trigger .chev{ margin-left:auto; color:var(--muted); }
+.status-del{ width:28px; height:28px; flex:0 0 auto; color:var(--muted); border-radius:var(--r); display:grid; place-items:center; }
+.status-del:hover:not(:disabled){ color:var(--terminal); background:var(--terminal-bg); }
+.status-del:disabled{ opacity:.32; cursor:not-allowed; }
+.status-empty{ display:flex; align-items:center; gap:12px; padding:20px; border:1.5px dashed var(--border-strong); border-radius:var(--r); color:var(--ink); }
+.status-empty .ei{ width:34px; height:34px; border-radius:99px; background:var(--surface); display:grid; place-items:center; color:var(--periwinkle); flex:0 0 auto; }
+.status-empty b{ font-size:13px; }
+#catMenu{ z-index:140; }   /* above the modal (130) */
+
+/* ───── expanded filter panel ───── */
+.popover.wide{ min-width:306px; max-width:322px; padding:8px; }
+.flt-top{ display:flex; align-items:center; padding:2px 6px 8px; }
+.flt-clear{ margin-left:auto; font-size:12px; font-weight:600; color:var(--indigo); }
+.flt-clear:hover{ text-decoration:underline; }
+.flt-scroll{ max-height:56vh; overflow-y:auto; }
+.flt-sec{ padding:6px 0; }
+.flt-sec + .flt-sec{ border-top:1px solid var(--surface); }
+.flt-h{ font-size:10px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); padding:4px 8px; }
+.flt-check{ display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:var(--r); font-size:13px; cursor:pointer; }
+.flt-check:hover{ background:var(--surface-2); }
+.flt-check input{ flex:0 0 auto; accent-color:var(--indigo); }
+.flt-check .avatar{ box-shadow:none; }
+.flt-row{ display:flex; gap:6px; align-items:center; padding:4px 8px; }
+.flt-row select{ font:inherit; font-size:12px; padding:6px; border:1px solid var(--lane-line); border-radius:var(--r); background:var(--white); flex:0 0 auto; max-width:92px; color:var(--ink); }
+.flt-row input{ font:inherit; font-size:12px; padding:6px 8px; border:1px solid var(--lane-line); border-radius:var(--r); flex:1; min-width:0; }
+.flt-row input:focus, .flt-row select:focus{ outline:none; border-color:var(--indigo); box-shadow:0 0 0 3px var(--indigo-tint); }
+.flt-row .rm{ width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; color:var(--muted); border-radius:var(--r); }
+.flt-row .rm:hover{ background:var(--terminal-bg); color:var(--terminal); }
+.flt-add{ display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--indigo); padding:6px 8px; border-radius:var(--r); margin-top:2px; }
+.flt-add:hover{ background:var(--indigo-tint); }
+.filter-badge{ position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px; border-radius:99px; background:var(--periwinkle); color:#fff; font-size:10px; font-weight:600; display:grid; place-items:center; border:2px solid var(--off-white); }
+.spinner{ width:14px; height:14px; border:2px solid var(--indigo-tint); border-top-color:var(--indigo); border-radius:99px; animation:spin .6s linear infinite; flex:0 0 auto; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.hidden{ display:none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ───────── SIDEBAR ───────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <!-- Brand logo (aninja.com style guide) inlined as SVG — no runtime fetch, fully self-contained -->
+      <svg class="logo-svg" role="img" aria-label="aNinja" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 182.25 49.499998" preserveAspectRatio="xMidYMid meet"><path fill="#ffffff" d="M 20.679688 20.519531 C 20.257812 22.25 20.042969 24.027344 20.042969 25.808594 C 20.042969 38.058594 29.976562 47.996094 42.230469 47.996094 C 54.484375 47.996094 64.417969 38.058594 64.417969 25.808594 C 64.417969 13.554688 54.484375 3.621094 42.230469 3.621094 C 39.472656 3.621094 36.738281 4.128906 34.167969 5.132812 L 30.964844 6.382812 L 29.152344 3.457031 C 28.722656 2.761719 28.207031 2.078125 27.59375 1.535156 C 25.488281 -0.316406 23.316406 0.25 21.226562 1.847656 C 20.207031 2.628906 19.421875 3.652344 19.207031 4.941406 C 19.160156 5.214844 19.140625 5.488281 19.144531 5.765625 L 19.1875 7.570312 L 17.890625 8.824219 C 17.847656 8.863281 17.808594 8.90625 17.769531 8.949219 C 16.527344 10.257812 16.492188 12.050781 17.015625 13.691406 C 17.339844 14.714844 17.90625 15.453125 18.820312 16.007812 L 21.398438 17.585938 L 20.679688 20.519531 " fill-opacity="1" fill-rule="evenodd"/><path fill="#201660" d="M 42.230469 5.585938 C 50.894531 5.585938 58.285156 11.039062 61.164062 18.695312 C 55.585938 21.25 48.90625 22.53125 42.230469 22.53125 C 35.554688 22.53125 28.875 21.25 23.296875 18.695312 C 23.753906 17.480469 24.324219 16.320312 24.996094 15.226562 C 21.414062 15.34375 19.378906 14.632812 18.890625 13.097656 C 17.640625 9.171875 21.742188 8.988281 24.398438 10.03125 C 20.828125 7.339844 20.171875 5.132812 22.421875 3.410156 C 23.699219 2.429688 24.921875 1.804688 26.296875 3.011719 C 27.507812 4.078125 28.648438 6.382812 29.71875 9.921875 C 33.160156 7.207031 37.507812 5.585938 42.230469 5.585938 Z M 50.210938 26.863281 C 51.078125 26.652344 51.945312 26.890625 52.574219 27.429688 C 53.074219 27.859375 53.371094 28.523438 54.148438 28.589844 C 55.359375 28.632812 55.550781 27.5 55.003906 26.535156 C 53.839844 24.871094 51.734375 24.003906 49.640625 24.511719 C 47.546875 25.019531 46.074219 26.757812 45.800781 28.769531 C 45.757812 29.878906 46.445312 30.796875 47.503906 30.203125 C 48.167969 29.785156 48.125 29.058594 48.371094 28.449219 C 48.683594 27.683594 49.34375 27.074219 50.210938 26.863281 Z M 32.425781 26.863281 C 31.5625 26.652344 30.691406 26.890625 30.0625 27.429688 C 29.566406 27.859375 29.269531 28.523438 28.488281 28.589844 C 27.277344 28.632812 27.085938 27.5 27.636719 26.535156 C 28.800781 24.871094 30.90625 24.003906 33 24.511719 C 35.089844 25.019531 36.5625 26.757812 36.835938 28.769531 C 36.878906 29.878906 36.191406 30.796875 35.136719 30.203125 C 34.472656 29.785156 34.515625 29.058594 34.265625 28.449219 C 33.957031 27.683594 33.292969 27.074219 32.425781 26.863281 Z M 62.269531 28.511719 C 60.949219 38.402344 52.480469 46.027344 42.230469 46.027344 C 31.980469 46.027344 23.511719 38.402344 22.191406 28.511719 C 24.4375 33.105469 28.964844 36.171875 36.1875 33.496094 C 38.695312 32.554688 40.464844 32.082031 42.230469 32.082031 C 43.996094 32.082031 45.765625 32.554688 48.273438 33.496094 C 55.496094 36.171875 60.023438 33.105469 62.269531 28.511719 " fill-opacity="1" fill-rule="evenodd"/><path fill="#201660" d="M 75.703125 25.660156 C 75.703125 27.078125 76.171875 28.265625 77.117188 29.222656 C 78.0625 30.183594 79.210938 30.65625 80.570312 30.65625 C 81.804688 30.65625 82.890625 30.175781 83.832031 29.21875 C 84.769531 28.257812 85.238281 27.132812 85.238281 25.84375 C 85.238281 24.472656 84.769531 23.296875 83.820312 22.3125 C 82.878906 21.324219 81.777344 20.832031 80.507812 20.832031 C 79.179688 20.832031 78.050781 21.296875 77.109375 22.234375 C 76.171875 23.171875 75.703125 24.3125 75.703125 25.660156 Z M 85.683594 34.238281 L 85.683594 32.164062 C 85.210938 33 84.554688 33.617188 83.699219 34.015625 C 82.847656 34.414062 81.757812 34.613281 80.429688 34.613281 C 77.941406 34.613281 75.859375 33.761719 74.191406 32.058594 C 72.519531 30.359375 71.683594 28.246094 71.683594 25.722656 C 71.683594 24.535156 71.894531 23.410156 72.3125 22.351562 C 72.730469 21.289062 73.324219 20.351562 74.105469 19.546875 C 74.941406 18.65625 75.867188 18.003906 76.890625 17.578125 C 77.914062 17.15625 79.058594 16.941406 80.335938 16.941406 C 81.5625 16.941406 82.617188 17.144531 83.5 17.550781 C 84.386719 17.964844 85.097656 18.582031 85.636719 19.410156 L 85.636719 17.378906 L 89.480469 17.378906 L 89.480469 34.238281 Z M 97.328125 34.238281 L 93.027344 34.238281 L 93.027344 11.917969 L 97.167969 11.917969 L 106.402344 26.175781 L 106.402344 11.917969 L 110.671875 11.917969 L 110.671875 34.238281 L 106.625 34.238281 L 97.328125 19.550781 Z M 118.144531 15.652344 L 114.316406 15.652344 L 114.316406 11.917969 L 118.144531 11.917969 Z M 114.316406 34.238281 L 114.316406 17.378906 L 118.144531 17.378906 L 118.144531 34.238281 Z M 125.5 17.378906 L 125.5 19.289062 C 126.070312 18.523438 126.730469 17.957031 127.46875 17.589844 C 128.210938 17.21875 129.054688 17.035156 130.007812 17.035156 C 131.21875 17.035156 132.28125 17.265625 133.1875 17.726562 C 134.09375 18.183594 134.847656 18.875 135.445312 19.792969 C 135.835938 20.410156 136.113281 21.105469 136.285156 21.882812 C 136.453125 22.667969 136.535156 23.808594 136.535156 25.3125 L 136.535156 34.238281 L 132.613281 34.238281 L 132.613281 26.765625 C 132.613281 24.511719 132.351562 22.960938 131.832031 22.121094 C 131.308594 21.28125 130.410156 20.863281 129.132812 20.863281 C 127.824219 20.863281 126.882812 21.324219 126.3125 22.25 C 125.742188 23.175781 125.453125 24.761719 125.453125 27.011719 L 125.453125 34.238281 L 121.65625 34.238281 L 121.65625 17.378906 Z M 143.816406 17.378906 L 143.816406 33.644531 C 143.816406 36.089844 143.472656 37.703125 142.78125 38.503906 C 142.09375 39.300781 140.824219 39.699219 138.972656 39.699219 C 138.703125 39.699219 138.492188 39.699219 138.347656 39.691406 C 138.203125 39.6875 138.070312 39.675781 137.949219 39.667969 L 137.949219 35.867188 L 138.070312 35.867188 C 138.847656 35.867188 139.367188 35.707031 139.628906 35.386719 C 139.890625 35.0625 140.019531 34.222656 140.019531 32.867188 L 140.019531 17.378906 Z M 143.816406 15.652344 L 140.019531 15.652344 L 140.019531 11.917969 L 143.816406 11.917969 Z M 150.636719 25.660156 C 150.636719 27.078125 151.105469 28.265625 152.054688 29.222656 C 152.996094 30.183594 154.144531 30.65625 155.503906 30.65625 C 156.742188 30.65625 157.824219 30.175781 158.765625 29.21875 C 159.703125 28.257812 160.171875 27.132812 160.171875 25.84375 C 160.171875 24.472656 159.703125 23.296875 158.753906 22.3125 C 157.8125 21.324219 156.710938 20.832031 155.445312 20.832031 C 154.113281 20.832031 152.984375 21.296875 152.042969 22.234375 C 151.105469 23.171875 150.636719 24.3125 150.636719 25.660156 Z M 160.617188 34.238281 L 160.617188 32.164062 C 160.148438 33 159.488281 33.617188 158.632812 34.015625 C 157.78125 34.414062 156.695312 34.613281 155.363281 34.613281 C 152.875 34.613281 150.792969 33.761719 149.125 32.058594 C 147.453125 30.359375 146.617188 28.246094 146.617188 25.722656 C 146.617188 24.535156 146.828125 23.410156 147.246094 22.351562 C 147.664062 21.289062 148.261719 20.351562 149.039062 19.546875 C 149.875 18.65625 150.800781 18.003906 151.824219 17.578125 C 152.847656 17.15625 153.992188 16.941406 155.269531 16.941406 C 156.496094 16.941406 157.550781 17.144531 158.433594 17.550781 C 159.320312 17.964844 160.03125 18.582031 160.570312 19.410156 L 160.570312 17.378906 L 164.414062 17.378906 L 164.414062 34.238281 L 160.617188 34.238281 " fill-opacity="1" fill-rule="nonzero"/></svg>
+    </div>
+    <nav class="nav">
+      <div class="nav-label">Main</div>
+      <button class="nav-item" data-page="Dashboard"><span class="ico" data-i="grid"></span> Dashboard</button>
+      <button class="nav-item" data-page="Inbox"><span class="ico" data-i="inbox"></span> Inbox <span class="badge">12</span></button>
+
+      <div class="nav-label">Leads</div>
+      <button class="nav-item" data-page="Leads"><span class="ico" data-i="users"></span> Leads</button>
+      <!-- Workflows promoted to top-level, directly under Leads (§2) -->
+      <button class="nav-item active" data-page="workflows"><span class="ico" data-i="flow"></span> Workflows</button>
+      <button class="nav-item" data-page="Tasks"><span class="ico" data-i="task"></span> Tasks <span class="badge">5</span></button>
+      <button class="nav-item" data-page="Reporting"><span class="ico" data-i="chart"></span> Reporting</button>
+
+      <div class="nav-label">Settings</div>
+      <button class="nav-item" data-page="Workspace"><span class="ico" data-i="cog"></span> Workspace</button>
+      <!-- Config lives here, renamed → "Workflow setup" (§2) -->
+      <button class="nav-item sub" id="navWfSetup"><span class="ico" data-i="sliders"></span> Workflow setup</button>
+    </nav>
+    <div class="userbar">
+      <div class="av">SH</div>
+      <div class="meta"><b>Saqib H.</b><span>Sales rep</span></div>
+    </div>
+  </aside>
+
+  <!-- ───────── MAIN ───────── -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumbs">Leads <span data-i="chevR"></span> <b>Workflows</b></div>
+      <div class="right">
+        <button class="icobtn" id="helpBtn" title="Help"><span data-i="help"></span></button>
+        <button class="icobtn" id="bellBtn" title="Notifications" style="position:relative"><span data-i="bell"></span><span class="filter-dot" style="top:4px;right:4px"></span></button>
+      </div>
+    </div>
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="wf-select" id="wfSelect">
+            <button class="wf-trigger" id="wfTrigger">
+              <span class="wf-name" id="wfName">Outbound Sales</span>
+              <span class="status-tag live" id="wfStatusTag">Live</span>
+              <span class="chev" data-i="chevD"></span>
+            </button>
+            <div class="wf-menu" id="wfMenu"></div>
+          </div>
+        </div>
+        <div class="lead-caption" id="leadCaption">— leads · — steps</div>
+      </div>
+
+      <div class="ph-actions">
+        <div class="segmented" id="viewToggle">
+          <button data-view="board" class="active"><span data-i="board"></span> Board</button>
+          <button data-view="list"><span data-i="list"></span> List</button>
+        </div>
+        <div class="search-box" id="searchBox">
+          <span class="sx" data-i="search"></span>
+          <input id="searchInput" placeholder="Search leads…" autocomplete="off">
+          <span class="sx" id="searchClear" data-i="x" title="Clear"></span>
+        </div>
+        <button class="icobtn-bordered" id="searchBtn" title="Search"><span data-i="search"></span></button>
+        <button class="icobtn-bordered" id="filterBtn" title="Filter"><span data-i="filter"></span></button>
+        <button class="btn-primary" id="addLeadBtn"><span data-i="plus"></span> Add lead</button>
+        <button class="icobtn-bordered" id="gearBtn" title="Workflow setup"><span data-i="cog"></span></button>
+      </div>
+    </div>
+
+    <!-- BOARD / LIST / STATES -->
+    <div class="board-wrap" id="boardWrap">
+      <div class="board-canvas" id="boardCanvas">
+        <div class="edge left" id="edgeL"></div><div class="edge right" id="edgeR"></div>
+        <div class="board" id="board"></div>
+      </div>
+      <div class="list-view hidden" id="listView"></div>
+
+      <div class="board-canvas skeleton hidden" id="skeleton" style="flex:1;">
+        <div class="board" id="skBoard"></div>
+      </div>
+
+      <div class="state-panel" id="emptyState">
+        <span data-i="emptybox"></span>
+        <div class="big">No leads in this workflow yet</div>
+        <div class="sub">Add a lead or import a list to start working this pipeline.</div>
+        <button class="btn-primary" onclick="openAddLead()"><span data-i="plus"></span> Add lead</button>
+      </div>
+
+      <div class="state-panel" id="errorState">
+        <span data-i="warn"></span>
+        <div class="big">Couldn’t load this board</div>
+        <div class="sub">The request to load leads failed. Check your connection and try again.</div>
+        <button class="btn-ghost" onclick="retryLoad()">↻ Retry</button>
+      </div>
+
+      <div class="state-panel" id="draftState">
+        <span data-i="draft"></span>
+        <div class="big">This workflow is a draft</div>
+        <div class="sub">Drafts aren’t operable yet. Publish it from Workflow setup to start moving leads through these steps.</div>
+        <button class="btn-primary" onclick="publishDraft()">Publish to operate</button>
+      </div>
+
+      <!-- non-pipeline nav destinations (kept lightweight in this prototype) -->
+      <div class="nav-placeholder" id="navPlaceholder">
+        <div class="pic" id="navPic"></div>
+        <div class="big" id="navPicTitle">—</div>
+        <div class="sub">This area lives outside the pipeline prototype. The operational board is under <b>Workflows</b>.</div>
+        <button class="btn-primary" onclick="document.querySelector('.nav-item[data-page=workflows]').click()"><span data-i="flow"></span> Back to Workflows</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DRAWERS -->
+<div class="scrim" id="scrim" onclick="closeAllOverlays()"></div>
+<aside class="drawer" id="drawer"></aside>
+<aside class="drawer" id="setupDrawer"></aside>
+
+<!-- popovers -->
+<div class="popover" id="moveMenu"></div>
+<div class="popover" id="colMenu"></div>
+<div class="popover" id="statusMenu"></div>
+<div class="popover" id="filterMenu"></div>
+<div class="popover" id="utilMenu"></div>
+<div class="popover" id="catMenu"></div>
+
+<!-- modal -->
+<div class="modal-card" id="modal"></div>
+
+<!-- toasts -->
+<div class="toast-wrap" id="toasts"></div>
+
+<!-- dev / states demo -->
+<details class="dev" id="dev">
+  <summary>⚙ Demo states</summary>
+  <div class="dev-panel">
+    <div class="dl">Board states</div>
+    <button onclick="showState('normal')">● Normal (data)</button>
+    <button onclick="showState('loading')">● Loading skeleton</button>
+    <button onclick="showState('empty')">● Empty workflow</button>
+    <button onclick="showState('error')">● Error + retry</button>
+    <div class="dl">Behaviour</div>
+    <label><input type="checkbox" id="failToggle"> Force move to fail (revert + toast)</label>
+  </div>
+</details>
+
+<script>
+/* ════════════════════════ ICONS ════════════════════════ */
+const ICONS = {
+  grid:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  inbox:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  users:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  flow:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M9 6h6a3 3 0 0 1 3 3v3"/></svg>',
+  task:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  chart:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  cog:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  sliders:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+  help:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  bell:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  chevD:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"/></svg>',
+  chevR:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>',
+  board:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="9" rx="1"/></svg>',
+  list:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  search:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  filter:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>',
+  plus:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  dots:'<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>',
+  mail:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>',
+  phone:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  msg:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  hand:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
+  clock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
+  grip:'<svg width="16" height="9" viewBox="0 0 22 12" fill="currentColor"><circle cx="5" cy="4" r="1.4"/><circle cx="11" cy="4" r="1.4"/><circle cx="17" cy="4" r="1.4"/><circle cx="5" cy="9" r="1.4"/><circle cx="11" cy="9" r="1.4"/><circle cx="17" cy="9" r="1.4"/></svg>',
+  check:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg>',
+  x:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  emptybox:'<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  warn:'<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  draft:'<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  trash:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
+  arrow:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  move:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>',
+  status:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>',
+  open:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+  up:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="18 15 12 9 6 15"/></svg>',
+  down:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>'
+};
+function icon(name){ return ICONS[name]||''; }
+document.querySelectorAll('[data-i]').forEach(el=>{ el.innerHTML = icon(el.dataset.i); });
+
+/* ════════════════════════ MOCK DATA ════════════════════════
+   CATEGORY is the fixed, system-wide layer — it is the ONLY thing that drives colour.
+   A STATUS = { label (free text, per-step), category }. Each STEP owns its status set.
+   A lead's `status` holds the category id of its current status. */
+const CATEGORIES = [   // order = severity order used for the config list (In Progress → Warning → Success → Failure → Neutral)
+  { id:'progress',   name:'In Progress', cls:'s-progress',   color:'var(--progress)' },
+  { id:'offtrack',   name:'Warning',     cls:'s-offtrack',   color:'var(--offtrack)' },
+  { id:'done',       name:'Success',     cls:'s-done',       color:'var(--done)' },
+  { id:'terminal',   name:'Failure',     cls:'s-terminal',   color:'var(--terminal)' },
+  { id:'notreached', name:'Neutral',     cls:'s-notreached', color:'var(--notreached)' }
+];
+const CAT = Object.fromEntries(CATEGORIES.map(c=>[c.id,c]));
+// cls + default label per category (default label is the fallback when a step has no matching status)
+const STATUS_META = {
+  done:{ cls:'s-done', label:'Done' }, progress:{ cls:'s-progress', label:'In progress' },
+  offtrack:{ cls:'s-offtrack', label:'Off-track' }, terminal:{ cls:'s-terminal', label:'Terminal' },
+  notreached:{ cls:'s-notreached', label:'Not reached' }
+};
+const SEVERITY = { offtrack:0, progress:1, done:2, notreached:3 };  // off-track floats to top
+// the per-step LABEL for a lead (category drives colour; label comes from the step's own status set)
+function leadLabel(l, w){ w = w || wf(); const step = w.steps[l.step]; const st = step && step.statuses && step.statuses.find(s=>s.category===l.status); return st ? st.label : (STATUS_META[l.status]||{label:l.status}).label; }
+function initials(name){ return name.split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+let LID = 0; const lid = ()=> 'L'+(++LID);
+function L(name, company, source, owner, status, step, time, extra={}){
+  return Object.assign({ id:lid(), name, company, source, owner, status, step, time,
+    manual:false, taskDue:null, taskOverdue:false, unread:false }, extra);
+}
+
+const WORKFLOWS = [
+  {
+    id:'wf-outbound', name:'Outbound Sales', state:'live',
+    steps:['New Lead','Contacted','Qualified','Proposal Sent','Negotiation','Closed Won'],
+    leads:[
+      L('Marcus Reilly','Northwind Traders','Cold list','MR','offtrack',0,'6d in step',{taskDue:'Due today',unread:true}),
+      L('Dana Whitfield','Acme Logistics','Webform','DW','progress',0,'1d in step'),
+      L('Priya Nair','Cloudgate Inc','Referral','PN','progress',0,'4h ago',{unread:true}),
+      L('Tom Bridges','Lone Star Mfg','Cold call','TB','done',0,'2d in step'),
+      L('Elena Costa','Bright Health','LinkedIn','EC','offtrack',1,'9d in step',{manual:true,taskDue:'Overdue',taskOverdue:true}),
+      L('Raj Malhotra','Vertex Capital','Webform','RM','progress',1,'3d in step'),
+      L('Sofia Marin','Greenline Co','Referral','SM','progress',1,'5h ago',{unread:true}),
+      L('Owen Pierce','Atlas Freight','Event','OP','done',1,'1d in step'),
+      L('Hannah Wu','Pixel Labs','Inbound','HW','progress',2,'2d in step',{manual:true}),
+      L('Carlos Vega','Nimbus SaaS','Referral','CV','offtrack',2,'11d in step',{taskDue:'Due today'}),
+      L('Grace Lin','Harbor Health','Webform','GL','done',2,'6h ago'),
+      L('Ben Foster','Summit Gear','Cold list','BF','progress',3,'2d in step',{unread:true}),
+      L('Aisha Karim','Delta Robotics','LinkedIn','AK','progress',3,'4d in step'),
+      L('Noah Klein','Forge Works','Referral','NK','offtrack',3,'8d in step',{taskDue:'Overdue',taskOverdue:true,manual:true}),
+      L('Maya Roberts','Crestline','Inbound','MR','progress',4,'1d in step'),
+      L('Victor Hughes','Apex Tooling','Event','VH','done',5,'Closed'),
+      L('Lena Brooks','Skyward Inc','Referral','LB','done',5,'Closed'),
+      L('Frank Doyle','Oldcorp','Cold list','FD','terminal',1,'Lost'),
+      L('Gina Park','Trailend LLC','Webform','GP','terminal',2,'Lost'),
+      L('Sam Ortiz','Driftwood','Cold call','SO','terminal',0,'Unqualified')
+    ]
+  },
+  {
+    id:'wf-onboard', name:'Customer Onboarding', state:'live',
+    steps:['Kickoff','Data Import','Training','Go-Live'],
+    leads:[
+      L('Riverside Dental','Riverside Dental','Upsell','RD','progress',0,'1d in step',{unread:true}),
+      L('Foster & Co','Foster & Co','New deal','FC','done',0,'2d in step'),
+      L('Brightway Clinic','Brightway Clinic','New deal','BC','offtrack',1,'7d in step',{taskDue:'Due today',manual:true}),
+      L('Hale Properties','Hale Properties','New deal','HP','progress',1,'2d in step'),
+      L('Summit Realty','Summit Realty','New deal','SR','progress',2,'3h ago'),
+      L('Vine & Co','Vine & Co','New deal','VC','done',3,'Live'),
+      L('Crest Auto','Crest Auto','New deal','CA','terminal',1,'Churned')
+    ]
+  },
+  {
+    id:'wf-enterprise', name:'Enterprise Deal Cycle', state:'live',
+    steps:['Discovery','Demo','Tech Eval','Security Review','Procurement','Legal','Signature','Onboarded'],
+    leads:[
+      L('Globex Corp','Globex Corp','ABM','GC','progress',0,'3d in step'),
+      L('Initech','Initech','Referral','IN','offtrack',2,'14d in step',{taskDue:'Overdue',taskOverdue:true,manual:true,unread:true}),
+      L('Soylent Inc','Soylent Inc','Event','SI','progress',3,'5d in step'),
+      L('Massive Dynamic','Massive Dynamic','ABM','MD','done',6,'2d in step'),
+      L('Stark Industries','Stark Industries','Inbound','ST','progress',4,'1d in step',{unread:true}),
+      L('Wayne Enterprises','Wayne Enterprises','Referral','WE','offtrack',5,'9d in step',{taskDue:'Due today'})
+    ]
+  },
+  {
+    id:'wf-reeng', name:'Re-engagement (Draft)', state:'draft',
+    steps:['Dormant','Touch 1','Touch 2'], leads:[]
+  }
+];
+
+/* Normalise steps → objects that OWN their status set (per-step, free labels) */
+function defaultStatuses(){ return [
+  { label:'In progress', category:'progress' },
+  { label:'Off-track',   category:'offtrack' },
+  { label:'Done',        category:'done' },
+  { label:'Terminal',    category:'terminal' }
+]; }
+WORKFLOWS.forEach(w=> w.steps = w.steps.map(s=> typeof s==='string' ? { name:s, statuses:defaultStatuses() } : s));
+// demonstrate that labels are per-step & free (colour still comes from category)
+WORKFLOWS[0].steps[5].statuses = [ {label:'Closed Won',category:'done'}, {label:'Renegotiating',category:'progress'}, {label:'Lost',category:'terminal'} ];
+WORKFLOWS[1].steps[3].statuses = [ {label:'Live',category:'done'}, {label:'Onboarding',category:'progress'}, {label:'Churned',category:'terminal'} ];
+
+/* ════════════════════════ STATE ════════════════════════ */
+let currentWf = WORKFLOWS[0].id;
+let currentView = 'board';
+let selectedCard = null;
+let dragLeadId = null;
+let forcedState = 'normal';
+let currentPage = 'workflows';
+let animateCards = true;
+let stepDraft = null, stsDrag = null, catEditRow = null;   // Add/Edit Step modal working copy
+const filters = { query:'', statuses:new Set(), owners:new Set(), sources:new Set(), flags:new Set(), custom:[] };
+const FLAG_TESTS = { task:l=>!!l.taskDue, overdue:l=>!!l.taskOverdue, manual:l=>!!l.manual, unread:l=>!!l.unread };
+const CUSTOM_FIELDS = { name:'Name', company:'Company', source:'Source', owner:'Owner' };
+function leadField(l, f){ return ({name:l.name, company:l.company, source:l.source, owner:l.owner}[f]||''); }
+function matchesFilters(l){
+  const f = filters;
+  if(f.query){ const q=f.query.toLowerCase(); if(!(l.name.toLowerCase().includes(q)||l.company.toLowerCase().includes(q)||l.source.toLowerCase().includes(q))) return false; }
+  if(f.statuses.size && !f.statuses.has(l.status)) return false;
+  if(f.owners.size && !f.owners.has(l.owner)) return false;
+  if(f.sources.size && !f.sources.has(l.source)) return false;
+  for(const fl of f.flags){ if(FLAG_TESTS[fl] && !FLAG_TESTS[fl](l)) return false; }   // flags AND together
+  for(const c of f.custom){
+    if(!c.value) continue;
+    const fv = leadField(l, c.field).toLowerCase(), v = c.value.toLowerCase();
+    if(c.op==='contains' && !fv.includes(v)) return false;
+    if(c.op==='is'      && fv!==v) return false;
+    if(c.op==='isnot'   && fv===v) return false;
+  }
+  return true;
+}
+function panelFilterCount(){ return filters.statuses.size + filters.owners.size + filters.sources.size + filters.flags.size + filters.custom.filter(c=>c.value).length; }
+function filtersActive(){ return !!filters.query || panelFilterCount()>0; }
+function clearFilters(){ filters.statuses.clear(); filters.owners.clear(); filters.sources.clear(); filters.flags.clear(); filters.custom=[]; }
+
+const $ = s=>document.querySelector(s);
+const wf = ()=> WORKFLOWS.find(w=>w.id===currentWf);
+function leadById(id){ for(const w of WORKFLOWS){ const l=w.leads.find(x=>x.id===id); if(l) return {lead:l, w}; } return null; }
+const isMobile = ()=> window.innerWidth < 640;
+
+/* ════════════════════════ WORKFLOW SELECTOR ════════════════════════ */
+function renderWfMenu(){
+  $('#wfMenu').innerHTML = WORKFLOWS.map(w=>{
+    const active = w.id===currentWf?'sel':'';
+    return `<button class="wf-opt ${active}" data-wf="${w.id}">
+      <span class="status-tag ${w.state}">${w.state==='live'?'Live':'Draft'}</span>
+      <span style="flex:1"><span class="wf-opt-name" style="display:block">${w.name}</span>
+        <span class="wf-opt-meta">${w.leads.length} leads · ${w.steps.length} steps</span></span>
+      <span class="check">${icon('check')}</span></button>`;
+  }).join('');
+  $('#wfMenu').querySelectorAll('.wf-opt').forEach(b=> b.onclick = ()=>{ selectWf(b.dataset.wf); $('#wfSelect').classList.remove('open'); });
+}
+$('#wfTrigger').onclick = (e)=>{ e.stopPropagation(); $('#wfSelect').classList.toggle('open'); };
+document.addEventListener('click', ()=> $('#wfSelect').classList.remove('open'));
+$('#wfMenu').onclick = e=> e.stopPropagation();
+
+function selectWf(id){
+  currentWf = id; const w = wf();
+  $('#wfName').textContent = w.name;
+  const tag = $('#wfStatusTag'); tag.textContent = w.state==='live'?'Live':'Draft'; tag.className = 'status-tag '+w.state;
+  currentView = (w.steps.length>7) ? 'list' : 'board';   // >7 steps → default List
+  animateCards = true;
+  syncViewToggle(); renderWfMenu(); render();
+}
+function syncViewToggle(){ $('#viewToggle').querySelectorAll('button').forEach(b=> b.classList.toggle('active', b.dataset.view===currentView)); }
+$('#viewToggle').querySelectorAll('button').forEach(b=>{ b.onclick = ()=>{ currentView=b.dataset.view; animateCards=true; syncViewToggle(); render(); }; });
+
+/* ── sidebar navigation ── */
+function navTo(page, el){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  currentPage = page;
+  if(page==='workflows'){ animateCards=true; }
+  render();
+}
+document.querySelectorAll('.nav-item[data-page]').forEach(b=> b.onclick = ()=> navTo(b.dataset.page, b));
+const NAV_ICON = { Dashboard:'grid', Inbox:'inbox', Leads:'users', Tasks:'task', Reporting:'chart', Workspace:'cog' };
+
+/* ════════════════════════ RENDER ROUTER ════════════════════════ */
+function showState(s){ forcedState=s; render(); $('#dev').open=false; }
+function retryLoad(){ forcedState='loading'; render(); setTimeout(()=>{ forcedState='normal'; render(); }, 1100); }
+function publishDraft(){ wf().state='live'; renderWfMenu(); selectWf(currentWf); toast('Workflow published — now live'); }
+function hideAll(){ ['#boardCanvas','#listView','#skeleton','#emptyState','#errorState','#draftState','#navPlaceholder'].forEach(s=>{ const el=$(s); el.classList.add('hidden'); if(el.classList.contains('state-panel')||el.classList.contains('nav-placeholder')) el.style.display='none'; }); }
+function render(){
+  const w = wf(); hideAll();
+  // non-pipeline nav destination
+  if(currentPage!=='workflows'){
+    $('#navPic').innerHTML = icon(NAV_ICON[currentPage]||'grid');
+    $('#navPicTitle').textContent = currentPage;
+    const np=$('#navPlaceholder'); np.classList.remove('hidden'); np.style.display='flex'; np.classList.add('view-enter');
+    setTimeout(()=>np.classList.remove('view-enter'),260);
+    return;
+  }
+  if(forcedState==='loading'){ renderSkeleton(); $('#skeleton').classList.remove('hidden'); updateCaption(); return; }
+  if(forcedState==='error'){ $('#errorState').style.display='flex'; $('#errorState').classList.remove('hidden'); updateCaption(); return; }
+  if(forcedState==='empty' || (forcedState==='normal' && w.state==='live' && w.leads.length===0)){
+    $('#emptyState').style.display='flex'; $('#emptyState').classList.remove('hidden'); updateCaption(); return; }
+  $('#errorState').style.display='none'; $('#emptyState').style.display='none'; $('#draftState').style.display='none';
+  if(w.state==='draft'){ $('#draftState').style.display='flex'; $('#draftState').classList.remove('hidden'); updateCaption(); return; }
+  if(currentView==='board'){ $('#boardCanvas').classList.remove('hidden'); renderBoard(); }
+  else { const lv=$('#listView'); lv.classList.remove('hidden'); renderList(); if(animateCards){ lv.classList.add('view-enter'); setTimeout(()=>lv.classList.remove('view-enter'),280); } }
+  updateCaption();
+  animateCards = false;
+}
+function updateCaption(){
+  const w = wf();
+  $('#leadCaption').innerHTML = `${w.leads.filter(l=>l.status!=='terminal').length} active leads · ${w.steps.length} steps`
+    + (w.steps.length>7 ? ` · <span style="color:var(--muted)">large pipeline — List recommended</span>`:'');
+}
+
+/* ════════════════════════ BOARD ════════════════════════ */
+function renderBoard(){
+  const w = wf(); const board = $('#board'); board.innerHTML = '';
+  const flt = filtersActive();
+  w.steps.forEach((step, si)=>{
+    const stepName = step.name;
+    const all = w.leads.filter(l=>l.step===si && matchesFilters(l));
+    const active = all.filter(l=>l.status!=='terminal').sort((a,b)=> SEVERITY[a.status]-SEVERITY[b.status]);
+    const terminal = all.filter(l=>l.status==='terminal');
+    const offCount = active.filter(l=>l.status==='offtrack').length;
+
+    const col = document.createElement('div');
+    col.className = 'col' + (active.length>=8 ? ' over-threshold':''); col.dataset.step = si;
+    const health = offCount>0
+      ? `<span class="health-chip offtrack"><span class="dot"></span>${offCount} off-track</span>`
+      : `<span class="health-chip ontrack"><span class="dot"></span>on track</span>`;
+    col.innerHTML = `
+      <div class="col-head">
+        <div class="col-head-row">
+          <span class="step-no">${si+1}</span>
+          <span class="col-name">${stepName}</span><span class="col-count">${active.length}</span>
+          <button class="col-menu-btn" data-step="${si}">${icon('dots')}</button>
+        </div>
+        ${health}
+        <div class="threshold-hint">${icon('list')} Lots of leads here — <button onclick="(function(){currentView='list';syncViewToggle();render();})()">switch to List</button></div>
+      </div>
+      <div class="col-body ${active.length===0?'is-empty':''}" data-step="${si}">
+        <div class="col-empty"><span class="ei">${icon(flt?'search':'arrow')}</span><span>${flt?'No matching leads':'Drop or move leads here'}</span></div>
+      </div>`;
+    const body = col.querySelector('.col-body');
+    active.forEach((l,ci)=>{ const c=cardEl(l); if(animateCards){ c.classList.add('enter'); c.style.animationDelay=Math.min(ci*30,240)+'ms'; } body.appendChild(c); });
+
+    if(terminal.length){
+      const tray = document.createElement('div'); tray.className = 'terminal-tray';
+      tray.innerHTML = `<button class="tray-head"><span class="dot"></span> ${terminal.length} terminated <span class="chev">${icon('chevD')}</span></button><div class="tray-body"></div>`;
+      const tbody = tray.querySelector('.tray-body'); terminal.forEach(l=> tbody.appendChild(cardEl(l)));
+      tray.querySelector('.tray-head').onclick = ()=> tray.classList.toggle('open'); body.appendChild(tray);
+    }
+
+    // sticky header lifts (shadow) once its cards scroll
+    body.addEventListener('scroll', ()=> col.classList.toggle('scrolled', body.scrollTop>2), {passive:true});
+
+    // DnD target — whole column body is a large drop zone, with insertion ghost
+    body.addEventListener('dragover', e=>{ e.preventDefault(); if(dragLeadId==null) return; body.classList.add('drag-over'); showGhost(body); });
+    body.addEventListener('dragleave', e=>{ if(!body.contains(e.relatedTarget)){ body.classList.remove('drag-over'); removeGhost(body); } });
+    body.addEventListener('drop', e=>{ e.preventDefault(); body.classList.remove('drag-over'); removeGhost(body); moveLead(dragLeadId, si); });
+
+    col.querySelector('.col-menu-btn').onclick = (e)=>{ e.stopPropagation(); openColMenu(e.currentTarget, si); };
+    board.appendChild(col);
+  });
+
+  const add = document.createElement('div'); add.className = 'add-col';
+  add.innerHTML = `<button onclick="openStepModal(null)"><span class="ei">${icon('plus')}</span><span class="add-t">Add step</span><span class="add-sub">New pipeline stage</span></button>`; board.appendChild(add);
+}
+function showGhost(body){ if(body.querySelector('.drop-ghost')) return; const g=document.createElement('div'); g.className='drop-ghost'; g.textContent='Move here'; const tray=body.querySelector('.terminal-tray'); tray?body.insertBefore(g,tray):body.appendChild(g); }
+function removeGhost(body){ const g=body.querySelector('.drop-ghost'); if(g) g.remove(); }
+
+function cardEl(l){
+  const sm = STATUS_META[l.status];
+  const el = document.createElement('div');
+  el.className = `card ${sm.cls}` + (selectedCard===l.id?' selected':'');
+  el.dataset.id = l.id;
+  el.draggable = (l.status!=='terminal');   // drag = power shortcut
+
+  const indicators = [
+    l.manual ? `<span class="tag-manual">${icon('hand')} Manual</span>` : '',
+    l.taskDue ? `<span class="chip-task ${l.taskOverdue?'overdue':''}">${icon('clock')}${l.taskDue}</span>` : '',
+    l.unread ? `<span class="unread" title="New inbound activity"></span>` : ''
+  ].join('');
+
+  el.innerHTML = `
+    <div class="drag-grip" title="Drag to move (or use ⋮)">${icon('grip')}</div>
+    <div class="card-l1">
+      <span class="card-name" title="${l.name}">${l.name}</span>
+      <span class="avatar" title="Owner">${l.owner}</span>
+      <button class="move-btn" data-move title="Move / actions">${icon('dots')}</button>
+    </div>
+    <div class="card-l2">${l.company} · ${l.source}</div>
+    <div class="card-l3">
+      <button class="pill ${sm.cls}" data-status-btn title="Change status"><span class="dot"></span>${leadLabel(l)}</button>
+      <span class="card-time">${l.time}</span>
+    </div>
+    ${indicators.trim() ? `<div class="meta-row">${indicators}</div>`:''}
+    <div class="quick">
+      <button class="qbtn">${icon('mail')} Email</button>
+      <button class="qbtn">${icon('phone')} Call</button>
+      <button class="qbtn">${icon('msg')} Text</button>
+    </div>`;
+
+  el.addEventListener('click', e=>{
+    const qb=e.target.closest('.qbtn'); if(qb){ e.stopPropagation(); toast(`${qb.textContent.trim()} · ${l.name}`); return; }
+    if(e.target.closest('[data-move]')){ e.stopPropagation(); openMoveMenu(e.target.closest('[data-move]'), l.id); return; }
+    if(e.target.closest('[data-status-btn]')){ e.stopPropagation(); openStatusMenu(e.target.closest('[data-status-btn]'), l.id); return; }
+    if(e.target.closest('.drag-grip')) return;
+    selectCard(l.id); openDrawer(l.id);
+  });
+  el.addEventListener('dragstart', e=>{ dragLeadId=l.id; el.classList.add('dragging'); $('#boardCanvas').classList.add('dragging-active'); e.dataTransfer.effectAllowed='move'; });
+  el.addEventListener('dragend', ()=>{ el.classList.remove('dragging'); dragLeadId=null; stopAutoScroll(); $('#boardCanvas').classList.remove('dragging-active'); document.querySelectorAll('.drag-over').forEach(d=>{d.classList.remove('drag-over'); removeGhost(d);}); });
+  return el;
+}
+function selectCard(id){ selectedCard=id; document.querySelectorAll('.card.selected').forEach(c=>c.classList.remove('selected')); const c=document.querySelector(`.card[data-id="${id}"]`); if(c) c.classList.add('selected'); }
+
+/* ── unified move (used by ⋮ menu, list ⋮, and drag) — optimistic + revert ── */
+function moveLead(leadId, targetStep){
+  if(leadId==null) return; const ref = leadById(leadId); if(!ref) return; const { lead } = ref;
+  if(lead.step===targetStep) return;
+  const prevStep=lead.step, prevManual=lead.manual, prevTime=lead.time;
+  const stepName = wf().steps[targetStep].name;
+  lead.step = targetStep; lead.manual = true; lead.time = 'just now';   // manual move pauses automation
+  render(); if(selectedCard===leadId) selectCard(leadId);
+  mockSave().then(()=>{
+    toast(`Moved to “${stepName}” · automation paused`, 'ok', { undo:()=>{ lead.step=prevStep; lead.manual=prevManual; lead.time=prevTime; render(); toast('Move undone'); }});
+  }).catch(()=>{ lead.step=prevStep; lead.manual=prevManual; lead.time=prevTime; render(); toast('Couldn’t move lead — change reverted', 'err'); });
+}
+function mockSave(){ return new Promise((res,rej)=> setTimeout(()=> $('#failToggle').checked?rej():res(), 260)); }
+
+/* ── ⋮ MOVE MENU (primary path) — also offers status + open ── */
+function openMoveMenu(anchor, leadId){
+  const { lead } = leadById(leadId); const w = wf();
+  const m = $('#moveMenu');
+  const steps = w.steps.map((s,i)=>{
+    if(i===lead.step) return `<button class="pop-item cur"><span class="stepdot" style="background:var(--periwinkle)"></span>${s.name} <span style="margin-left:auto;font-size:11px">current</span></button>`;
+    return `<button class="pop-item" data-step="${i}"><span class="stepdot"></span>Move to “${s.name}”</button>`;
+  }).join('');
+  m.innerHTML = `<div class="sheet-grip"></div><div class="pop-label">Move ${lead.name}</div>${steps}
+    <div class="pop-sep"></div>
+    <button class="pop-item" data-act="status">${icon('status')} Change status…</button>
+    <button class="pop-item" data-act="open">${icon('open')} Open details</button>`;
+  m.querySelectorAll('[data-step]').forEach(b=> b.onclick=()=>{ closePopovers(); moveLead(leadId, parseInt(b.dataset.step,10)); });
+  m.querySelector('[data-act="status"]').onclick=()=>{ closePopovers(); openStatusMenu(anchor, leadId); };
+  m.querySelector('[data-act="open"]').onclick=()=>{ closePopovers(); selectCard(leadId); openDrawer(leadId); };
+  markMenuOpen(leadId);
+  showPopover(m, anchor);
+}
+
+/* ── status menu — lists THIS STEP's own statuses (per-step set) ── */
+function openStatusMenu(anchor, leadId){
+  const m = $('#statusMenu'); const { lead, w } = leadById(leadId); const step = w.steps[lead.step];
+  m.innerHTML = `<div class="sheet-grip"></div><div class="pop-label">Set status · ${step.name}</div>` + step.statuses.map(st=>{
+    const c = CAT[st.category];
+    return `<button class="pop-item" data-cat="${st.category}" data-label="${st.label.replace(/"/g,'&quot;')}"><span class="pill ${c.cls}" style="pointer-events:none"><span class="dot"></span>${st.label}</span></button>`;
+  }).join('');
+  m.querySelectorAll('[data-cat]').forEach(b=> b.onclick=()=>{ setStatus(leadId,b.dataset.cat,b.dataset.label); closePopovers(); });
+  markMenuOpen(leadId);
+  showPopover(m, anchor);
+}
+function setStatus(leadId, cat, label){ const { lead } = leadById(leadId); lead.status = cat; if(cat==='terminal') lead.time='Lost'; render(); if(selectedCard===leadId) selectCard(leadId); toast(`Status set to “${label||CAT[cat].name}”`); }
+function markMenuOpen(leadId){ document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open')); const c=document.querySelector(`.card[data-id="${leadId}"]`); if(c) c.classList.add('menu-open'); }
+
+/* ── column menu ── */
+function openColMenu(anchor, si){
+  const m = $('#colMenu'); const w = wf();
+  const holdsLeads = w.leads.some(l=>l.step===si && l.status!=='terminal');
+  m.innerHTML = `<div class="pop-label">${w.steps[si].name}</div>
+    <button class="pop-item" onclick="closePopovers();openStepModal(${si})">${icon('edit')} Edit step</button>
+    <button class="pop-item" onclick="closePopovers();openStepModal(null,${si})">${icon('plus')} Insert step after</button>
+    <div class="pop-sep"></div>
+    <button class="pop-item danger" data-del>${icon('trash')} Delete step</button>`;
+  m.querySelector('[data-del]').onclick = ()=>{ closePopovers(); deleteStep(si, holdsLeads); };
+  showPopover(m, anchor);
+}
+function deleteStep(si, holdsLeads){
+  const w = wf();
+  if(w.steps.length<=2){ toast('A workflow needs at least 2 steps', 'err'); return; }
+  if(holdsLeads){ toast('Can’t delete — migrate or terminate this step’s leads first', 'err'); return; }
+  w.steps.splice(si,1); w.leads.forEach(l=>{ if(l.step>si) l.step--; }); renderWfMenu(); render(); toast('Step deleted');
+}
+
+/* ════════════════════════ LIST VIEW ════════════════════════ */
+function renderList(){
+  const w = wf(); const root = $('#listView'); const flt = filtersActive();
+  root.innerHTML = w.steps.map((step,si)=>{
+    const stepName = step.name;
+    const all = w.leads.filter(l=>l.step===si && matchesFilters(l));
+    const active = all.filter(l=>l.status!=='terminal').sort((a,b)=> SEVERITY[a.status]-SEVERITY[b.status]);
+    const terminal = all.filter(l=>l.status==='terminal');
+    const rows = active.concat(terminal).map(l=>{
+      const sm = STATUS_META[l.status];
+      return `<div class="list-row" data-id="${l.id}">
+        <span class="sdot ${sm.cls}"></span>
+        <span class="lname">${l.name} ${l.manual?'<span class="tag-manual" style="margin-left:4px">'+icon('hand')+' Manual</span>':''} ${l.unread?'<span class="unread" style="display:inline-block;margin-left:4px"></span>':''}</span>
+        <span class="lcompany">${l.company}</span>
+        <span><span class="pill ${sm.cls}"><span class="dot"></span>${leadLabel(l,w)}</span></span>
+        <span class="lowner"><span class="avatar">${l.owner}</span></span>
+        <span class="ltime">${l.time}</span>
+        <button class="lmove" data-move title="Move / actions">${icon('dots')}</button>
+      </div>`;
+    }).join('') || `<div class="list-row" style="color:var(--muted);grid-template-columns:1fr">${flt?'No matching leads':'No leads in this step'}</div>`;
+    const off = active.filter(l=>l.status==='offtrack').length;
+    const chip = off>0 ? `<span class="health-chip offtrack" style="margin-top:0"><span class="dot"></span>${off} off-track</span>`
+                       : `<span class="health-chip ontrack" style="margin-top:0"><span class="dot"></span>on track</span>`;
+    return `<div class="list-section"><div class="list-shead"><span class="nm">${stepName}</span><span class="ct">${active.length}</span>${chip}</div>${rows}</div>`;
+  }).join('');
+  root.querySelectorAll('.list-row[data-id]').forEach(r=>{
+    r.onclick=(e)=>{ if(e.target.closest('[data-move]')){ e.stopPropagation(); openMoveMenu(e.target.closest('[data-move]'), r.dataset.id); return; } selectedCard=r.dataset.id; openDrawer(r.dataset.id); };
+  });
+}
+
+/* ════════════════════════ DRAWER ════════════════════════ */
+function openDrawer(leadId){
+  const { lead } = leadById(leadId); const sm = STATUS_META[lead.status]; const w = wf();
+  const steps = w.steps.map((s,i)=>{
+    let cls='notreached'; if(i<lead.step) cls='done'; else if(i===lead.step) cls='current '+sm.cls;
+    return `<div class="step ${cls}"><div class="connector"></div><div class="node"><div class="in"></div></div><div class="lbl">${s.name}</div></div>`;
+  }).join('');
+  $('#drawer').innerHTML = `
+    <div class="drawer-head">
+      <div class="av">${lead.owner}</div>
+      <div style="flex:1">
+        <h2>${lead.name}</h2><div class="sub">${lead.company} · ${lead.source}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="pill ${sm.cls}"><span class="dot"></span>${leadLabel(lead,w)}</span>
+          <span class="card-time">${lead.time}</span>
+          ${lead.manual?`<span class="tag-manual">${icon('hand')} Automation paused</span>`:''}
+        </div>
+      </div>
+      <button class="x" onclick="closeDrawer()">${icon('x')}</button>
+    </div>
+    <div class="drawer-body">
+      <div class="dsec"><h3>Pipeline progress <span class="wf-pill">${w.name}</span></h3><div class="stepper">${steps}</div></div>
+      ${lead.manual?`<div class="dsec"><div style="background:var(--indigo-tint);border-radius:var(--r);padding:12px;font-size:12px;display:flex;gap:10px;align-items:flex-start">
+        <span style="color:var(--periwinkle);margin-top:1px">${icon('hand')}</span>
+        <div>Automation is <b>paused</b> for this lead after a manual move.
+        <button onclick="resumeAuto('${lead.id}')" style="color:var(--indigo);font-weight:600;text-decoration:underline">Resume automation</button></div></div></div>`:''}
+      <div class="dsec"><h3>Quick actions</h3>
+        <div class="quick" style="display:flex">
+          <button class="qbtn" onclick="toast('Email · ${lead.name.replace(/'/g,'')}')">${icon('mail')} Email</button>
+          <button class="qbtn" onclick="toast('Call · ${lead.name.replace(/'/g,'')}')">${icon('phone')} Call</button>
+          <button class="qbtn" onclick="toast('Text · ${lead.name.replace(/'/g,'')}')">${icon('msg')} Text</button>
+        </div></div>
+      <div class="dsec"><h3>Activity</h3>
+        <div class="timeline">
+          <div class="tl-item"><span class="tdot"></span><div><div>${lead.unread?'<b>New inbound email</b>':'Outbound email sent'}</div><div class="tmeta">${lead.time}</div></div></div>
+          <div class="tl-item"><span class="tdot" style="background:var(--muted)"></span><div><div>Moved to “${w.steps[lead.step].name}”</div><div class="tmeta">${lead.manual?'Manual move':'Automated'}</div></div></div>
+          <div class="tl-item"><span class="tdot" style="background:var(--muted)"></span><div><div>Lead created</div><div class="tmeta">via ${lead.source}</div></div></div>
+        </div></div>
+    </div>`;
+  $('#drawer').classList.add('show'); $('#scrim').classList.add('show');
+}
+function resumeAuto(id){ const {lead}=leadById(id); lead.manual=false; render(); openDrawer(id); toast('Automation resumed'); }
+function closeDrawer(){ $('#drawer').classList.remove('show'); selectedCard=null; document.querySelectorAll('.card.selected').forEach(c=>c.classList.remove('selected')); if(!anyOverlay()) $('#scrim').classList.remove('show'); }
+
+/* ════════════════════════ MODALS ════════════════════════ */
+function openAddLead(){ openModal(`
+  <h3>Add lead</h3><p>Add a new lead to “${wf().name}”. It starts at the first step.</p>
+  <div class="field"><label>Lead name</label><input id="m_name" placeholder="e.g. Jordan Avery" autofocus></div>
+  <div class="field"><label>Company</label><input id="m_co" placeholder="e.g. Brightline Co"></div>
+  <div class="field"><label>Source</label><select id="m_src"><option>Webform</option><option>Referral</option><option>Cold list</option><option>LinkedIn</option><option>Event</option></select></div>
+  <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button><button class="btn-primary" onclick="doAddLead()">Add lead</button></div>`); }
+$('#addLeadBtn').onclick = openAddLead;
+function doAddLead(){ const name=$('#m_name').value.trim()||'New Lead'; const co=$('#m_co').value.trim()||'—'; const src=$('#m_src').value;
+  wf().leads.unshift(L(name,co,src,initials(name),'progress',0,'just now')); closeModal(); renderWfMenu(); forcedState='normal'; render(); toast(`Added “${name}” to ${wf().steps[0].name}`); }
+
+function openModal(html){ const m=$('#modal'); m.classList.remove('lg'); m.innerHTML=html; m.classList.add('show'); $('#scrim').classList.add('show'); }
+function anyOverlay(){ return $('#drawer').classList.contains('show')||$('#setupDrawer').classList.contains('show')||$('#modal').classList.contains('show'); }
+function closeModal(){ const m=$('#modal'); m.classList.remove('show'); m.classList.remove('lg'); stepDraft=null; if(!anyOverlay()) $('#scrim').classList.remove('show'); }
+function closeSetup(){ $('#setupDrawer').classList.remove('show'); if(!anyOverlay()) $('#scrim').classList.remove('show'); render(); }
+function closeAllOverlays(){ $('#drawer').classList.remove('show'); $('#setupDrawer').classList.remove('show'); $('#modal').classList.remove('show'); $('#scrim').classList.remove('show'); selectedCard=null; document.querySelectorAll('.card.selected').forEach(c=>c.classList.remove('selected')); }
+
+/* ════════════════════════ WORKFLOW SETUP (drawer) ════════════════════════ */
+function gotoSetup(){ closePopovers(); openSetup(); }
+function openSetup(focusStep){ renderSetup(focusStep); $('#setupDrawer').classList.add('show'); $('#scrim').classList.add('show'); }
+function renderSetup(focusStep){
+  const w = wf();
+  const esc = s => s.replace(/"/g,'&quot;');
+  const stepsHtml = w.steps.map((s,i)=>{
+    const cnt = w.leads.filter(l=>l.step===i && l.status!=='terminal').length;
+    const ns = s.statuses.length;
+    return `<div class="step-edit" data-i="${i}">
+      <span class="sno">${i+1}</span>
+      <button class="step-open" data-open="${i}">
+        <span class="se-name">${esc(s.name)}</span>
+        <span class="se-sub">${ns} status${ns!==1?'es':''} · ${cnt} lead${cnt!==1?'s':''}</span>
+      </button>
+      <span class="ord">
+        <button class="ico-btn" data-up="${i}" ${i===0?'disabled':''} title="Move up">${icon('up')}</button>
+        <button class="ico-btn" data-down="${i}" ${i===w.steps.length-1?'disabled':''} title="Move down">${icon('down')}</button>
+      </span>
+      <button class="ico-btn del" data-edit="${i}" title="Edit step">${icon('edit')}</button>
+      <button class="ico-btn del" data-del="${i}" title="Delete step">${icon('trash')}</button>
+    </div>`;
+  }).join('');
+  $('#setupDrawer').innerHTML = `
+    <div class="drawer-head">
+      <div class="av">${icon('sliders')}</div>
+      <div style="flex:1"><h2>Workflow setup</h2><div class="sub">Steps, order & status</div></div>
+      <button class="x" onclick="closeSetup()">${icon('x')}</button>
+    </div>
+    <div class="drawer-body">
+      <div class="dsec setup-sec"><h3>Workflow</h3>
+        <div class="field" style="margin-bottom:12px"><label>Name</label><input id="wfRename" value="${esc(w.name)}"></div>
+        <div class="step-edit" style="box-shadow:none">
+          <div style="flex:1"><div style="font-size:13px;font-weight:600">${w.state==='live'?'Live':'Draft'}</div>
+            <div style="font-size:11px;color:var(--muted)">${w.state==='live'?'Operable — leads move through steps':'Not operable until published'}</div></div>
+          <span class="toggle" id="wfPublishToggle"><span class="switch ${w.state==='live'?'on':''}"></span></span>
+        </div>
+      </div>
+      <div class="dsec setup-sec"><h3>Steps · ${w.steps.length}</h3>
+        ${stepsHtml}
+        <button class="btn-ghost" id="setupAddStep" style="width:100%;margin-top:2px;justify-content:center;display:flex;align-items:center;gap:6px">${icon('plus')} Add step</button>
+      </div>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="closeSetup()">Done</button>
+    </div>`;
+  const d = $('#setupDrawer');
+  $('#wfRename').onchange = e=>{ const v=e.target.value.trim(); if(v){ w.name=v; $('#wfName').textContent=v; renderWfMenu(); } };
+  $('#wfPublishToggle').onclick = ()=>{ w.state = w.state==='live'?'draft':'live'; selectWf(w.id); renderSetup(); toast(w.state==='live'?'Workflow published — now Live':'Workflow set to Draft'); };
+  d.querySelectorAll('[data-open]').forEach(b=> b.onclick=()=> openStepModal(+b.dataset.open));
+  d.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=> openStepModal(+b.dataset.edit));
+  d.querySelectorAll('[data-up]').forEach(b=> b.onclick=()=> moveStep(+b.dataset.up,-1));
+  d.querySelectorAll('[data-down]').forEach(b=> b.onclick=()=> moveStep(+b.dataset.down,1));
+  d.querySelectorAll('[data-del]').forEach(b=> b.onclick=()=>{
+    const i=+b.dataset.del, holds = w.leads.some(l=>l.step===i && l.status!=='terminal');
+    if(w.steps.length<=2){ toast('A workflow needs at least 2 steps','err'); return; }
+    if(holds){ toast('Migrate or terminate this step’s leads before deleting','err'); return; }
+    w.steps.splice(i,1); w.leads.forEach(l=>{ if(l.step>i) l.step--; }); renderWfMenu(); render(); renderSetup();
+  });
+  $('#setupAddStep').onclick = ()=> openStepModal(null);
+  if(focusStep!=null){ const row=d.querySelector(`.step-edit[data-i="${focusStep}"]`); if(row){ row.classList.add('flash'); setTimeout(()=>row.classList.remove('flash'),1200); } }
+}
+function moveStep(i, dir){
+  const w = wf(); const j=i+dir; if(j<0||j>=w.steps.length) return;
+  [w.steps[i],w.steps[j]]=[w.steps[j],w.steps[i]];
+  w.leads.forEach(l=>{ if(l.step===i) l.step=j; else if(l.step===j) l.step=i; });
+  render(); renderWfMenu(); renderSetup(j);
+}
+$('#gearBtn').onclick = gotoSetup;
+$('#navWfSetup').onclick = ()=>{ openSetup(); };
+
+/* ════════════════════════ ADD / EDIT STEP MODAL (per-step status config) ════════════════════════ */
+function openStepModal(index, insertAfter){
+  const w = wf(); const isEdit = index!=null && index>=0;
+  stepDraft = {
+    index: isEdit ? index : null,
+    insertAfter: (!isEdit && insertAfter!=null) ? insertAfter : null,   // null = append at end
+    name: isEdit ? w.steps[index].name : '',
+    statuses: isEdit ? w.steps[index].statuses.map(s=>({...s})) : defaultStatuses(),  // new steps start with a sensible set
+    saving:false, saveError:false, touched:false
+  };
+  renderStepModal();
+  const m=$('#modal'); m.classList.add('lg'); m.classList.add('show'); $('#scrim').classList.add('show');
+  setTimeout(()=>{ const n=$('#stepNameInput'); if(n){ n.focus(); n.select(); } }, 40);
+}
+function leadsHold(stepIndex, cat){ if(stepIndex==null) return false; return wf().leads.some(l=>l.step===stepIndex && l.status===cat); }
+function validStepName(){ const d=stepDraft, w=wf(), n=d.name.trim();
+  if(!n) return {ok:false,msg:'Step name is required'};
+  if(w.steps.some((s,i)=> i!==d.index && s.name.trim().toLowerCase()===n.toLowerCase())) return {ok:false,msg:'A step with this name already exists'};
+  return {ok:true}; }
+function validateDraft(){ const d=stepDraft; if(!validStepName().ok) return {ok:false}; if(d.statuses.length<1) return {ok:false};
+  const seen=new Set(); for(const s of d.statuses){ if(!s.category) return {ok:false}; const l=s.label.trim().toLowerCase(); if(!l||seen.has(l)) return {ok:false}; seen.add(l); } return {ok:true}; }
+function statusRowHtml(st,i){
+  const d=stepDraft; const c = st.category?CAT[st.category]:null;
+  const dup = d.touched && st.label.trim() && d.statuses.some((o,j)=>j!==i && o.label.trim() && o.label.trim().toLowerCase()===st.label.trim().toLowerCase());
+  const labelErr = d.touched && (!st.label.trim() || dup);
+  const catErr = d.touched && !st.category;
+  const last = d.statuses.length<=1;
+  const held = st.category && leadsHold(d.index, st.category) && d.statuses.filter(o=>o.category===st.category).length<=1;
+  return `<div class="status-row" data-si="${i}">
+      <span class="grip" draggable="true" title="Drag to reorder">${icon('grip')}</span>
+      <span class="sw" style="${c?`background:${c.color}`:'border:1.5px dashed var(--border-strong)'}" title="${c?c.name:'No category'}"></span>
+      <input class="lbl ${labelErr?'err':''}" value="${st.label.replace(/"/g,'&quot;')}" placeholder="Status label" data-lbl="${i}" aria-label="Status label">
+      <span class="cat-select"><button class="cat-trigger ${catErr?'err':''}" data-cat-btn="${i}" type="button">
+        ${c?`<span class="dot" style="background:${c.color}"></span>${c.name}`:`<span style="color:var(--muted)">Category</span>`}
+        <span class="chev">${icon('chevD')}</span></button></span>
+      <button class="ico-btn status-del" data-del-st="${i}" ${last||held?'disabled':''} title="${last?'A step needs at least one status':held?'Reassign this step’s leads first':'Delete status'}">${icon('trash')}</button>
+    </div>${dup?`<div class="field-err" style="margin:-3px 0 5px 50px">Label must be unique within this step</div>`:''}`;
+}
+function renderStepModal(){
+  const w=wf(); const d=stepDraft; const isEdit = d.index!=null;
+  const nameCheck = validStepName(); const nameErr = d.touched && !nameCheck.ok;
+  const rowsHtml = d.statuses.length
+    ? d.statuses.map((st,i)=>statusRowHtml(st,i)).join('')
+    : `<div class="status-empty"><span class="ei">${icon('status')}</span><div><b>No statuses yet</b><div style="font-size:12px;color:var(--muted)">Add the first status this step can hold.</div></div></div>`;
+  const v = validateDraft();
+  $('#modal').innerHTML = `
+    <div class="modal-head">
+      <span class="mh-ico">${icon(isEdit?'edit':'plus')}</span>
+      <div style="flex:1"><h3>${isEdit?'Edit step':'Add step'}</h3><div style="font-size:12px;color:var(--muted)">${isEdit?w.name:'New stage in '+w.name}</div></div>
+      <button class="x" onclick="closeModal()">${icon('x')}</button>
+    </div>
+    <div class="modal-scroll">
+      ${d.saveError?`<div class="save-banner"><span class="bdot"></span> Couldn’t save — please try again.</div>`:''}
+      <div class="field"><label>Step name <span style="color:var(--terminal)">*</span></label>
+        <input id="stepNameInput" value="${d.name.replace(/"/g,'&quot;')}" placeholder="e.g. Demo Scheduled" class="${nameErr?'err':''}">
+        ${nameErr?`<div class="field-err">${nameCheck.msg}</div>`:''}</div>
+      ${isEdit?'':`<div class="field"><label>Position</label><select id="stepPos">
+        <option value="end" ${d.insertAfter==null?'selected':''}>At the end</option>
+        ${w.steps.map((s,i)=>`<option value="${i}" ${d.insertAfter===i?'selected':''}>After “${s.name.replace(/"/g,'&quot;')}”</option>`).join('')}
+      </select></div>`}
+      <div class="cfg-head"><label style="margin:0">Step statuses</label><button class="add-status" id="addStatusBtn" type="button">${icon('plus')} Add status</button></div>
+      <div class="status-cfg" id="statusList">${rowsHtml}</div>
+    </div>
+    <div class="modal-foot">
+      ${d.saving?`<span class="spinner"></span><span style="font-size:12px;color:var(--muted);margin-right:auto">Saving…</span>`:'<span style="margin-right:auto"></span>'}
+      <button class="btn-ghost" type="button" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="stepSaveBtn" type="button" ${v.ok&&!d.saving?'':'disabled'} style="${v.ok&&!d.saving?'':'opacity:.5;cursor:default'}">Save</button>
+    </div>`;
+  wireStepModal();
+}
+function wireStepModal(){
+  const d=stepDraft;
+  const nameInp=$('#stepNameInput'); if(nameInp){ nameInp.oninput=e=>{ d.name=e.target.value; refreshSaveBtn(); }; nameInp.onblur=()=>{ if(d.name.trim()||d.touched){ d.touched=true; renderStepModal(); } }; }
+  const posSel=$('#stepPos'); if(posSel){ posSel.onchange=e=>{ d.insertAfter = e.target.value==='end' ? null : +e.target.value; }; }
+  $('#addStatusBtn').onclick=()=>{ d.statuses.push({label:'',category:null}); renderStepModal(); const ins=$('#statusList').querySelectorAll('input.lbl'); const last=ins[ins.length-1]; if(last) last.focus(); };
+  $('#statusList').querySelectorAll('input[data-lbl]').forEach(inp=>{
+    inp.oninput=()=>{ d.statuses[+inp.dataset.lbl].label=inp.value; refreshSaveBtn(); };
+    inp.onblur=()=>{ d.touched=true; renderStepModal(); };
+  });
+  $('#statusList').querySelectorAll('[data-cat-btn]').forEach(b=> b.onclick=e=>{ e.stopPropagation(); openCatMenu(e.currentTarget, +b.dataset.catBtn); });
+  $('#statusList').querySelectorAll('[data-del-st]').forEach(b=> b.onclick=()=>{ if(b.disabled) return; d.statuses.splice(+b.dataset.delSt,1); d.touched=true; renderStepModal(); });
+  const sb=$('#stepSaveBtn'); if(sb) sb.onclick=saveStep;
+  // drag reorder via grip
+  $('#statusList').querySelectorAll('.status-row').forEach(row=>{
+    const i=+row.dataset.si; const grip=row.querySelector('.grip');
+    grip.addEventListener('dragstart', e=>{ stsDrag=i; row.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    grip.addEventListener('dragend', ()=>{ stsDrag=null; row.classList.remove('dragging'); });
+    row.addEventListener('dragover', e=>{ if(stsDrag==null)return; e.preventDefault(); row.classList.add('drag-over'); });
+    row.addEventListener('dragleave', ()=> row.classList.remove('drag-over'));
+    row.addEventListener('drop', e=>{ if(stsDrag==null)return; e.preventDefault(); moveStatus(stsDrag, i); stsDrag=null; });
+  });
+}
+function refreshSaveBtn(){ const v=validateDraft(); const sb=$('#stepSaveBtn'); if(sb){ const ok=v.ok&&!stepDraft.saving; sb.disabled=!ok; sb.style.opacity=ok?'':'.5'; sb.style.cursor=ok?'':'default'; } }
+function moveStatus(from,to){ const a=stepDraft.statuses; if(from===to||to==null)return; const [it]=a.splice(from,1); a.splice(to,0,it); renderStepModal(); }
+function openCatMenu(anchor, i){
+  catEditRow=i; const m=$('#catMenu');
+  m.innerHTML = `<div class="pop-label">Category</div>` + CATEGORIES.map(c=>{
+    const sel = stepDraft.statuses[i].category===c.id;
+    return `<button class="pop-item" data-cat="${c.id}"><span class="dot" style="width:10px;height:10px;border-radius:99px;background:${c.color}"></span>${c.name}${sel?`<span style="margin-left:auto;color:var(--indigo)">${icon('check')}</span>`:''}</button>`;
+  }).join('');
+  m.querySelectorAll('[data-cat]').forEach(b=> b.onclick=()=>{ stepDraft.statuses[catEditRow].category=b.dataset.cat; stepDraft.touched=true; m.classList.remove('show'); renderStepModal(); });
+  showPopover(m, anchor);
+}
+function saveStep(){
+  const d=stepDraft; d.touched=true; if(!validateDraft().ok){ renderStepModal(); return; }
+  d.saving=true; d.saveError=false; renderStepModal();
+  setTimeout(()=>{
+    if($('#failToggle').checked){ d.saving=false; d.saveError=true; renderStepModal(); return; }   // demo save-error
+    const w=wf(); const clean = d.statuses.map(s=>({label:s.label.trim(), category:s.category}));
+    let msg;
+    if(d.index!=null){ w.steps[d.index].name=d.name.trim(); w.steps[d.index].statuses=clean; msg=`Saved “${d.name.trim()}”`; }
+    else {
+      const step={ name:d.name.trim(), statuses:clean };
+      if(d.insertAfter==null){ w.steps.push(step); }
+      else { const pos=d.insertAfter+1; w.steps.splice(pos,0,step); w.leads.forEach(l=>{ if(l.step>=pos) l.step++; }); }
+      msg=`Step “${d.name.trim()}” added`;
+    }
+    stepDraft=null; closeModal(); renderWfMenu(); render();
+    if($('#setupDrawer').classList.contains('show')) renderSetup();
+    toast(msg);   // saving propagates to board / list / reporting / lead-detail (shared definition)
+  }, 450);
+}
+
+/* ════════════════════════ SEARCH ════════════════════════ */
+function toggleSearch(force){
+  const box=$('#searchBox'); const open = force!==undefined ? force : !box.classList.contains('open');
+  box.classList.toggle('open', open); $('#searchBtn').classList.toggle('on', open);
+  if(open){ $('#searchInput').focus(); }
+  else { $('#searchInput').value=''; if(filters.query){ filters.query=''; render(); } }
+}
+$('#searchBtn').onclick = e=>{ e.stopPropagation(); toggleSearch(); };
+$('#searchInput').oninput = e=>{ filters.query = e.target.value.trim(); render(); };
+$('#searchClear').onclick = ()=> toggleSearch(false);
+
+/* ════════════════════════ FILTER (multi-facet + custom builder) ════════════════════════ */
+function chk(set, val, label, swatch){
+  const ck = set.has(val)?'checked':'';
+  return `<label class="flt-check"><input type="checkbox" ${ck} data-set="${set===filters.statuses?'statuses':set===filters.owners?'owners':set===filters.sources?'sources':'flags'}" data-val="${val.replace(/"/g,'&quot;')}">${swatch||''}<span>${label}</span></label>`;
+}
+function openFilter(anchor){
+  const m=$('#filterMenu'); m.classList.add('wide');
+  const w = wf();
+  const owners  = [...new Set(w.leads.map(l=>l.owner))].sort();
+  const sources = [...new Set(w.leads.map(l=>l.source))].sort();
+  const statusBoxes = CATEGORIES.map(c=> chk(filters.statuses, c.id, c.name, `<span class="dot" style="width:9px;height:9px;border-radius:99px;background:${c.color}"></span>`)).join('');
+  const ownerBoxes  = owners.map(o=> chk(filters.owners, o, o, `<span class="avatar" style="width:18px;height:18px">${o}</span>`)).join('');
+  const sourceBoxes = sources.map(s=> chk(filters.sources, s, s)).join('');
+  const flagDefs = [['task','Has open task'],['overdue','Task overdue'],['manual','Automation paused (Manual)'],['unread','Unread activity']];
+  const flagBoxes = flagDefs.map(([id,lbl])=> chk(filters.flags, id, lbl)).join('');
+  const customRows = filters.custom.map((c,i)=>`
+    <div class="flt-row" data-ci="${i}">
+      <select data-cfield>${Object.entries(CUSTOM_FIELDS).map(([k,v])=>`<option value="${k}" ${c.field===k?'selected':''}>${v}</option>`).join('')}</select>
+      <select data-cop>${[['contains','contains'],['is','is'],['isnot','is not']].map(([k,v])=>`<option value="${k}" ${c.op===k?'selected':''}>${v}</option>`).join('')}</select>
+      <input data-cval value="${(c.value||'').replace(/"/g,'&quot;')}" placeholder="value">
+      <button class="rm" data-crm title="Remove">${icon('x')}</button>
+    </div>`).join('');
+  m.innerHTML = `
+    <div class="flt-top"><span class="pop-label" style="padding:0">Filters</span><button class="flt-clear" data-clear>Clear all</button></div>
+    <div class="flt-scroll">
+      <div class="flt-sec"><div class="flt-h">Status</div>${statusBoxes}</div>
+      <div class="flt-sec"><div class="flt-h">Owner</div>${ownerBoxes}</div>
+      <div class="flt-sec"><div class="flt-h">Lead source</div>${sourceBoxes}</div>
+      <div class="flt-sec"><div class="flt-h">Flags</div>${flagBoxes}</div>
+      <div class="flt-sec"><div class="flt-h">Custom conditions ${filters.custom.length?`· all must match`:''}</div>
+        ${customRows || '<div style="font-size:12px;color:var(--muted);padding:4px 8px">No conditions yet.</div>'}
+        <button class="flt-add" data-cadd>${icon('plus')} Add condition</button>
+      </div>
+    </div>`;
+  // checkbox handlers (mutate set, refresh board + badge; no panel rebuild)
+  m.querySelectorAll('[data-set]').forEach(cb=> cb.onchange=()=>{ const set=filters[cb.dataset.set]; cb.checked?set.add(cb.dataset.val):set.delete(cb.dataset.val); updateFilterDot(); render(); });
+  // custom rows
+  m.querySelectorAll('.flt-row').forEach(row=>{ const i=+row.dataset.ci;
+    row.querySelector('[data-cfield]').onchange=e=>{ filters.custom[i].field=e.target.value; updateFilterDot(); render(); };
+    row.querySelector('[data-cop]').onchange=e=>{ filters.custom[i].op=e.target.value; updateFilterDot(); render(); };
+    row.querySelector('[data-cval]').oninput=e=>{ filters.custom[i].value=e.target.value; updateFilterDot(); render(); };
+    row.querySelector('[data-crm]').onclick=()=>{ filters.custom.splice(i,1); updateFilterDot(); render(); openFilter(anchor); };
+  });
+  m.querySelector('[data-cadd]').onclick=()=>{ filters.custom.push({field:'name', op:'contains', value:''}); openFilter(anchor); setTimeout(()=>{ const ins=m.querySelectorAll('[data-cval]'); const last=ins[ins.length-1]; if(last) last.focus(); },20); };
+  m.querySelector('[data-clear]').onclick=()=>{ clearFilters(); updateFilterDot(); render(); openFilter(anchor); };
+  showPopover(m, anchor);
+}
+function updateFilterDot(){
+  const b=$('#filterBtn'); const n=panelFilterCount(); b.classList.toggle('on', n>0);
+  let badge=b.querySelector('.filter-badge');
+  if(n>0){ if(!badge){ badge=document.createElement('span'); badge.className='filter-badge'; b.appendChild(badge);} badge.textContent=n; }
+  else if(badge){ badge.remove(); }
+}
+$('#filterBtn').onclick = e=>{ e.stopPropagation(); openFilter(e.currentTarget); };
+
+/* ════════════════════════ TOP BAR (help / notifications) ════════════════════════ */
+$('#helpBtn').onclick = e=>{ e.stopPropagation(); const m=$('#utilMenu');
+  m.innerHTML = `<div class="pop-label">Help</div>
+    <button class="pop-item" data-t="Documentation">${icon('open')} Documentation</button>
+    <button class="pop-item" data-t="Keyboard shortcuts">${icon('status')} Keyboard shortcuts</button>
+    <button class="pop-item" data-t="Contacting support">${icon('mail')} Contact support</button>`;
+  m.querySelectorAll('[data-t]').forEach(b=> b.onclick=()=>{ toast(b.dataset.t); closePopovers(); });
+  showPopover(m, e.currentTarget);
+};
+$('#bellBtn').onclick = e=>{ e.stopPropagation(); const m=$('#utilMenu');
+  m.innerHTML = `<div class="pop-label">Notifications</div>
+    <div class="notif"><span class="nd"></span><div><div class="nt"><b>Marcus Reilly</b> replied to your email</div><div class="nm">2m ago · New Lead</div></div></div>
+    <div class="notif"><span class="nd"></span><div><div class="nt">Task <b>overdue</b> for Elena Costa</div><div class="nm">1h ago · Contacted</div></div></div>
+    <div class="notif read"><span class="nd"></span><div><div class="nt">Carlos Vega moved to <b>Qualified</b></div><div class="nm">3h ago</div></div></div>
+    <div class="pop-sep"></div><button class="pop-item" data-read>${icon('check')} Mark all read</button>`;
+  m.querySelector('[data-read]').onclick=()=>{ const d=$('#bellBtn .filter-dot'); if(d) d.remove(); toast('All notifications marked read'); closePopovers(); };
+  showPopover(m, e.currentTarget);
+};
+
+/* ════════════════════════ POPOVER UTIL (+ mobile bottom-sheet) ════════════════════════ */
+function showPopover(el, anchor){
+  closePopovers();
+  if(isMobile()){ el.classList.add('sheet'); el.style.left=''; el.style.top=''; el.classList.add('show'); return; }
+  el.classList.remove('sheet');
+  el.style.visibility='hidden'; el.classList.add('show');
+  const r = anchor.getBoundingClientRect(); const w = el.offsetWidth, h = el.offsetHeight;
+  let left = r.left, top = r.bottom+6;
+  if(left+w>window.innerWidth-12) left = window.innerWidth-w-12;
+  if(top+h>window.innerHeight-12) top = r.top-h-6;
+  el.style.left=left+'px'; el.style.top=top+'px'; el.style.visibility='';
+}
+function closePopovers(){ ['#moveMenu','#colMenu','#statusMenu','#filterMenu','#utilMenu','#catMenu'].forEach(s=>$(s).classList.remove('show')); document.querySelectorAll('.card.menu-open').forEach(c=>c.classList.remove('menu-open')); }
+document.addEventListener('click', e=>{ if(!e.target.closest('.popover') && !e.target.closest('.col-menu-btn') && !e.target.closest('[data-status-btn]') && !e.target.closest('[data-move]')) closePopovers(); });
+window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closePopovers(); closeAllOverlays(); toggleSearch(false); } });
+
+/* ════════════════════════ DRAG AUTO-SCROLL (near board edges) ════════════════════════ */
+let scrollRAF=null, scrollVel=0;
+const canvas = $('#boardCanvas');
+canvas.addEventListener('dragover', e=>{
+  if(dragLeadId==null) return; const r = canvas.getBoundingClientRect(); const x = e.clientX; const zone=56;
+  const el=$('#edgeL'), er=$('#edgeR');
+  if(x < r.left+zone){ scrollVel = -Math.ceil((r.left+zone-x)/4); el.classList.add('hot'); er.classList.remove('hot'); startAutoScroll(); }
+  else if(x > r.right-zone){ scrollVel = Math.ceil((x-(r.right-zone))/4); er.classList.add('hot'); el.classList.remove('hot'); startAutoScroll(); }
+  else { scrollVel=0; el.classList.remove('hot'); er.classList.remove('hot'); }
+});
+function startAutoScroll(){ if(scrollRAF) return; const tick=()=>{ if(scrollVel!==0 && dragLeadId!=null){ canvas.scrollLeft += scrollVel; scrollRAF=requestAnimationFrame(tick); } else { scrollRAF=null; } }; scrollRAF=requestAnimationFrame(tick); }
+function stopAutoScroll(){ scrollVel=0; if(scrollRAF){ cancelAnimationFrame(scrollRAF); scrollRAF=null; } $('#edgeL').classList.remove('hot'); $('#edgeR').classList.remove('hot'); }
+
+/* ════════════════════════ TOAST ════════════════════════ */
+function toast(msg, kind='ok', opts={}){
+  const t=document.createElement('div'); t.className='toast'+(kind==='err'?' err':'');
+  t.innerHTML = `<span>${msg}</span>` + (opts.undo?`<button class="undo">Undo</button>`:'');
+  if(opts.undo) t.querySelector('.undo').onclick=()=>{ opts.undo(); t.remove(); };
+  $('#toasts').appendChild(t);
+  setTimeout(()=>{ t.style.transition='opacity .2s'; t.style.opacity='0'; setTimeout(()=>t.remove(),200); }, opts.undo?5000:2600);
+}
+
+/* ════════════════════════ SKELETON ════════════════════════ */
+function renderSkeleton(){
+  const sk=$('#skBoard'); sk.innerHTML='';
+  for(let i=0;i<4;i++){ const c=document.createElement('div'); c.className='sk-col'; let cards='';
+    for(let j=0;j<3;j++) cards+=`<div class="sk-bar sk-card"></div>`;
+    c.innerHTML=`<div class="sk-bar" style="height:18px;width:55%;margin-bottom:8px"></div><div class="sk-bar" style="height:14px;width:35%;margin-bottom:14px"></div>${cards}`;
+    sk.appendChild(c); }
+}
+
+/* ════════════════════════ BOOT ════════════════════════ */
+renderWfMenu(); selectWf(currentWf);
+</script>
+</body>
+</html>
