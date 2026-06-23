@@ -603,9 +603,9 @@ button.pill{ cursor:pointer; } button.pill:hover{ filter:brightness(.97); }
 
       <div class="state-panel" id="draftState">
         <span data-i="draft"></span>
-        <div class="big">This workflow is a draft</div>
-        <div class="sub">Drafts aren’t operable yet. Publish it from Workflow setup to start moving leads through these steps.</div>
-        <button class="btn-primary" onclick="publishDraft()">Publish to operate</button>
+        <div class="big" id="draftTitle">This workflow is a draft</div>
+        <div class="sub" id="draftSub">Drafts aren’t operable yet. Publish it from Workflow setup to start moving leads through these steps.</div>
+        <div id="draftActions" style="display:flex;gap:8px"></div>
       </div>
 
       <!-- non-pipeline nav destinations (kept lightweight in this prototype) -->
@@ -874,7 +874,7 @@ const NAV_ICON = { Dashboard:'grid', Inbox:'inbox', Leads:'users', Tasks:'task',
 /* ════════════════════════ RENDER ROUTER ════════════════════════ */
 function showState(s){ forcedState=s; render(); $('#dev').open=false; }
 function retryLoad(){ forcedState='loading'; render(); setTimeout(()=>{ forcedState='normal'; render(); }, 1100); }
-function publishDraft(){ wf().state='live'; renderWfMenu(); selectWf(currentWf); toast('Workflow published — now live'); }
+function publishDraft(){ if(wf().steps.length===0){ toast('Add at least one step before publishing','err'); openSetup(); return; } wf().state='live'; renderWfMenu(); selectWf(currentWf); toast('Workflow published — now live'); }
 function hideAll(){ ['#boardCanvas','#listView','#skeleton','#emptyState','#errorState','#draftState','#navPlaceholder'].forEach(s=>{ const el=$(s); el.classList.add('hidden'); if(el.classList.contains('state-panel')||el.classList.contains('nav-placeholder')) el.style.display='none'; }); }
 function render(){
   const w = wf(); hideAll();
@@ -891,7 +891,18 @@ function render(){
   if(forcedState==='empty' || (forcedState==='normal' && w.state==='live' && w.leads.length===0)){
     $('#emptyState').style.display='flex'; $('#emptyState').classList.remove('hidden'); updateCaption(); return; }
   $('#errorState').style.display='none'; $('#emptyState').style.display='none'; $('#draftState').style.display='none';
-  if(w.state==='draft'){ $('#draftState').style.display='flex'; $('#draftState').classList.remove('hidden'); updateCaption(); return; }
+  if(w.state==='draft'){
+    const noSteps = w.steps.length===0;
+    $('#draftTitle').textContent = noSteps ? 'Let’s build this workflow' : 'This workflow is a draft';
+    $('#draftSub').textContent = noSteps
+      ? 'No steps yet. Open Workflow setup to add steps and their statuses, then publish to operate.'
+      : 'Drafts aren’t operable yet. Publish it to start moving leads through these steps.';
+    $('#draftActions').innerHTML = noSteps
+      ? `<button class="btn-primary" onclick="openSetup()"><span data-i="sliders"></span> Configure steps</button>`
+      : `<button class="btn-ghost" onclick="openSetup()">Edit steps</button><button class="btn-primary" onclick="publishDraft()">Publish to operate</button>`;
+    $('#draftActions').querySelectorAll('[data-i]').forEach(el=> el.innerHTML=icon(el.dataset.i));
+    $('#draftState').style.display='flex'; $('#draftState').classList.remove('hidden'); updateCaption(); return;
+  }
   if(currentView==='board'){ $('#boardCanvas').classList.remove('hidden'); renderBoard(); }
   else { const lv=$('#listView'); lv.classList.remove('hidden'); renderList(); if(animateCards){ lv.classList.add('view-enter'); setTimeout(()=>lv.classList.remove('view-enter'),280); } }
   updateCaption();
@@ -1156,44 +1167,29 @@ $('#addLeadBtn').onclick = openAddLead;
 function doAddLead(){ const name=$('#m_name').value.trim()||'New Lead'; const co=$('#m_co').value.trim()||'—'; const src=$('#m_src').value;
   wf().leads.unshift(L(name,co,src,initials(name),'progress',0,'just now')); closeModal(); renderWfMenu(); forcedState='normal'; render(); toast(`Added “${name}” to ${wf().steps[0].name}`); }
 
-/* ── create new workflow / pipeline (starts as a Draft) ── */
+/* ── new workflow: create an empty Draft and open the SAME setup drawer directly
+      (name + steps + statuses configured in one place, like editing — just blank) ── */
 let wfSeq = 0;
-const WF_TEMPLATES = {
-  sales:   ['New Lead','Contacted','Qualified','Proposal Sent','Closed Won'],
-  onboard: ['Kickoff','Setup','Training','Go-Live'],
-  simple:  ['To Do','In Progress','Done'],
-  minimal: ['Stage 1','Stage 2']
-};
+let setupNewId = null;   // id of a freshly-created (not-yet-confirmed) workflow open in setup
 function openNewWorkflow(){
-  openModal(`
-    <h3>Create workflow</h3><p>A new workflow starts as a <b>Draft</b>. Pick a starter set of steps, then publish it to operate.</p>
-    <div class="field"><label>Workflow name <span style="color:var(--terminal)">*</span></label><input id="nw_name" placeholder="e.g. Partner Onboarding"></div>
-    <div class="field"><label>Starter steps</label><select id="nw_tpl">
-      <option value="sales">Sales pipeline — New Lead → Closed Won (5)</option>
-      <option value="onboard">Onboarding — Kickoff → Go-Live (4)</option>
-      <option value="simple">Simple — To Do · In Progress · Done (3)</option>
-      <option value="minimal">Minimal — 2 stages</option>
-    </select></div>
-    <div id="nw_err" class="field-err" style="display:none"></div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button><button class="btn-primary" onclick="createWorkflow()">Create workflow</button></div>`);
-  setTimeout(()=>{ const n=$('#nw_name'); if(n) n.focus(); }, 40);
-}
-function createWorkflow(){
-  const name=$('#nw_name').value.trim();
-  const err=$('#nw_err');
-  if(!name){ err.textContent='Workflow name is required'; err.style.display='block'; $('#nw_name').classList.add('err'); return; }
-  if(WORKFLOWS.some(w=>w.name.trim().toLowerCase()===name.toLowerCase())){ err.textContent='A workflow with this name already exists'; err.style.display='block'; $('#nw_name').classList.add('err'); return; }
   const id='wf-new-'+(++wfSeq);
-  const steps=(WF_TEMPLATES[$('#nw_tpl').value]||WF_TEMPLATES.simple).map(n=>({ name:n, statuses:defaultStatuses() }));
-  WORKFLOWS.push({ id, name, state:'draft', steps, leads:[] });
-  closeModal(); renderWfMenu(); selectWf(id); toast(`Workflow “${name}” created — Draft. Publish it to start.`);
+  WORKFLOWS.push({ id, name:'Untitled workflow', state:'draft', steps:[], leads:[] });
+  setupNewId = id;
+  renderWfMenu(); selectWf(id); openSetup();
+  setTimeout(()=>{ const n=$('#wfRename'); if(n){ n.focus(); n.select(); } }, 70);
+}
+function discardWorkflow(id){
+  const i=WORKFLOWS.findIndex(w=>w.id===id); if(i<0) return;
+  const nm=WORKFLOWS[i].name; WORKFLOWS.splice(i,1); setupNewId=null;
+  $('#setupDrawer').classList.remove('show'); if(!anyOverlay()) $('#scrim').classList.remove('show');
+  currentWf = WORKFLOWS[0].id; renderWfMenu(); selectWf(currentWf); toast(`Discarded “${nm}”`);
 }
 
 function openModal(html){ const m=$('#modal'); m.classList.remove('lg'); m.innerHTML=html; m.classList.add('show'); $('#scrim').classList.add('show'); }
 function anyOverlay(){ return $('#drawer').classList.contains('show')||$('#setupDrawer').classList.contains('show')||$('#modal').classList.contains('show'); }
 function closeModal(){ const m=$('#modal'); m.classList.remove('show'); m.classList.remove('lg'); stepDraft=null; if(!anyOverlay()) $('#scrim').classList.remove('show'); }
-function closeSetup(){ $('#setupDrawer').classList.remove('show'); if(!anyOverlay()) $('#scrim').classList.remove('show'); render(); }
-function closeAllOverlays(){ $('#drawer').classList.remove('show'); $('#setupDrawer').classList.remove('show'); $('#modal').classList.remove('show'); $('#scrim').classList.remove('show'); selectedCard=null; document.querySelectorAll('.card.selected').forEach(c=>c.classList.remove('selected')); }
+function closeSetup(){ setupNewId=null; $('#setupDrawer').classList.remove('show'); if(!anyOverlay()) $('#scrim').classList.remove('show'); render(); }
+function closeAllOverlays(){ setupNewId=null; $('#drawer').classList.remove('show'); $('#setupDrawer').classList.remove('show'); $('#modal').classList.remove('show'); $('#scrim').classList.remove('show'); selectedCard=null; document.querySelectorAll('.card.selected').forEach(c=>c.classList.remove('selected')); }
 
 /* ════════════════════════ WORKFLOW SETUP (drawer) ════════════════════════ */
 function gotoSetup(){ closePopovers(); openSetup(); }
@@ -1218,15 +1214,16 @@ function renderSetup(focusStep){
       <button class="ico-btn del" data-del="${i}" title="Delete step">${icon('trash')}</button>
     </div>`;
   }).join('');
+  const isNew = setupNewId===w.id;
   $('#setupDrawer').innerHTML = `
     <div class="drawer-head">
-      <div class="av">${icon('sliders')}</div>
-      <div style="flex:1"><h2>Workflow setup</h2><div class="sub">Steps, order & status</div></div>
+      <div class="av">${icon(isNew?'plus':'sliders')}</div>
+      <div style="flex:1"><h2>${isNew?'Create workflow':'Workflow setup'}</h2><div class="sub">${isNew?'Name it, add steps & statuses':'Steps, order & status'}</div></div>
       <button class="x" onclick="closeSetup()">${icon('x')}</button>
     </div>
     <div class="drawer-body">
       <div class="dsec setup-sec"><h3>Workflow</h3>
-        <div class="field" style="margin-bottom:12px"><label>Name</label><input id="wfRename" value="${esc(w.name)}"></div>
+        <div class="field" style="margin-bottom:12px"><label>Name <span style="color:var(--terminal)">*</span></label><input id="wfRename" value="${esc(w.name)}" placeholder="e.g. Partner Onboarding"></div>
         <div class="step-edit" style="box-shadow:none">
           <div style="flex:1"><div style="font-size:13px;font-weight:600">${w.state==='live'?'Live':'Draft'}</div>
             <div style="font-size:11px;color:var(--muted)">${w.state==='live'?'Operable — leads move through steps':'Not operable until published'}</div></div>
@@ -1234,14 +1231,17 @@ function renderSetup(focusStep){
         </div>
       </div>
       <div class="dsec setup-sec"><h3>Steps · ${w.steps.length}</h3>
-        ${stepsHtml}
+        ${stepsHtml || `<div class="status-empty" style="margin-bottom:8px"><span class="ei">${icon('flow')}</span><div><b>No steps yet</b><div style="font-size:12px;color:var(--muted)">Add your first step to build the pipeline.</div></div></div>`}
         <button class="btn-ghost" id="setupAddStep" style="width:100%;margin-top:2px;justify-content:center;display:flex;align-items:center;gap:6px">${icon('plus')} Add step</button>
       </div>
-      <button class="btn-primary" style="width:100%;justify-content:center" onclick="closeSetup()">Done</button>
+      <div style="display:flex;gap:8px">
+        ${isNew?`<button class="btn-ghost" style="flex:0 0 auto" onclick="discardWorkflow('${w.id}')">Discard</button>`:''}
+        <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeSetup()">${isNew?'Done':'Done'}</button>
+      </div>
     </div>`;
   const d = $('#setupDrawer');
-  $('#wfRename').onchange = e=>{ const v=e.target.value.trim(); if(v){ w.name=v; $('#wfName').textContent=v; renderWfMenu(); } };
-  $('#wfPublishToggle').onclick = ()=>{ w.state = w.state==='live'?'draft':'live'; selectWf(w.id); renderSetup(); toast(w.state==='live'?'Workflow published — now Live':'Workflow set to Draft'); };
+  $('#wfRename').oninput = e=>{ const v=e.target.value.trim(); w.name = v || 'Untitled workflow'; $('#wfName').textContent=w.name; renderWfMenu(); };
+  $('#wfPublishToggle').onclick = ()=>{ if(w.state!=='live' && w.steps.length===0){ toast('Add at least one step before publishing','err'); return; } w.state = w.state==='live'?'draft':'live'; selectWf(w.id); renderSetup(); toast(w.state==='live'?'Workflow published — now Live':'Workflow set to Draft'); };
   d.querySelectorAll('[data-open]').forEach(b=> b.onclick=()=> openStepModal(+b.dataset.open));
   d.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=> openStepModal(+b.dataset.edit));
   d.querySelectorAll('[data-up]').forEach(b=> b.onclick=()=> moveStep(+b.dataset.up,-1));
