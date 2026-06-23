@@ -368,6 +368,10 @@ button.pill{ cursor:pointer; } button.pill:hover{ filter:brightness(.97); }
 .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
 .btn-ghost{ font-size:13px; font-weight:500; padding:8px 14px; border-radius:var(--r); color:var(--ink); border:1px solid var(--border-strong); background:var(--white); }
 .btn-ghost:hover{ background:var(--surface-2); }
+.btn-danger{ font-size:13px; font-weight:500; padding:8px 14px; border-radius:var(--r); color:#fff; background:var(--terminal); border:none; display:inline-flex; align-items:center; gap:6px; }
+.btn-danger:hover{ filter:brightness(.95); }
+.btn-danger-ghost{ font-size:13px; font-weight:500; padding:9px 14px; border-radius:var(--r); color:var(--terminal-tx); border:1px solid var(--lane-line); background:var(--white); display:flex; align-items:center; justify-content:center; gap:6px; width:100%; }
+.btn-danger-ghost:hover{ background:var(--terminal-bg); border-color:var(--terminal); }
 
 /* ───── sticky column header lifts as cards scroll under it ───── */
 .col-head{ transition:box-shadow .2s ease, border-color .2s ease; }
@@ -1184,6 +1188,21 @@ function discardWorkflow(id){
   $('#setupDrawer').classList.remove('show'); if(!anyOverlay()) $('#scrim').classList.remove('show');
   currentWf = WORKFLOWS[0].id; renderWfMenu(); selectWf(currentWf); toast(`Discarded “${nm}”`);
 }
+/* ── delete an existing workflow (confirmation, since it removes its leads) ── */
+function deleteWorkflow(id){
+  if(WORKFLOWS.length<=1){ toast('You need at least one workflow','err'); return; }
+  const w=WORKFLOWS.find(x=>x.id===id); if(!w) return;
+  const n=w.leads.length;
+  openModal(`<h3>Delete “${w.name}”?</h3>
+    <p>This permanently removes the workflow${n?` and its <b>${n} lead${n!==1?'s':''}</b>`:''} and can’t be undone.</p>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn-danger" onclick="confirmDeleteWorkflow('${id}')">${icon('trash')} Delete workflow</button></div>`);
+}
+function confirmDeleteWorkflow(id){
+  const i=WORKFLOWS.findIndex(w=>w.id===id); if(i<0) return; const nm=WORKFLOWS[i].name;
+  WORKFLOWS.splice(i,1); setupNewId=null; closeAllOverlays();
+  currentWf = WORKFLOWS[0].id; renderWfMenu(); selectWf(currentWf); toast(`Deleted “${nm}”`);
+}
 
 function openModal(html){ const m=$('#modal'); m.classList.remove('lg'); m.innerHTML=html; m.classList.add('show'); $('#scrim').classList.add('show'); }
 function anyOverlay(){ return $('#drawer').classList.contains('show')||$('#setupDrawer').classList.contains('show')||$('#modal').classList.contains('show'); }
@@ -1236,8 +1255,9 @@ function renderSetup(focusStep){
       </div>
       <div style="display:flex;gap:8px">
         ${isNew?`<button class="btn-ghost" style="flex:0 0 auto" onclick="discardWorkflow('${w.id}')">Discard</button>`:''}
-        <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeSetup()">${isNew?'Done':'Done'}</button>
+        <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeSetup()">Done</button>
       </div>
+      ${isNew?'':`<div class="dsec" style="border-top:1px solid var(--surface);padding-top:16px;margin-top:4px"><button class="btn-danger-ghost" onclick="deleteWorkflow('${w.id}')">${icon('trash')} Delete workflow</button></div>`}
     </div>`;
   const d = $('#setupDrawer');
   $('#wfRename').oninput = e=>{ const v=e.target.value.trim(); w.name = v || 'Untitled workflow'; $('#wfName').textContent=w.name; renderWfMenu(); };
