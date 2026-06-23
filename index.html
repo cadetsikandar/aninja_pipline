@@ -125,6 +125,10 @@ svg{ display:block; }
 .wf-opt .wf-opt-meta{ font-size:11px; color:var(--muted); }
 .wf-opt .check{ margin-left:auto; color:var(--indigo); opacity:0; }
 .wf-opt.sel .check{ opacity:1; }
+.wf-new{ display:flex; align-items:center; gap:10px; width:100%; padding:9px 10px; border-radius:var(--r); text-align:left; font-size:13px; font-weight:600; color:var(--indigo); }
+.wf-new:hover{ background:var(--indigo-tint); }
+.wf-new-ico{ width:24px; height:24px; border-radius:99px; background:var(--indigo-tint); color:var(--indigo); display:grid; place-items:center; flex:0 0 auto; }
+.wf-new:hover .wf-new-ico{ background:var(--white); }
 
 /* header right cluster */
 .ph-actions{ margin-left:auto; display:flex; align-items:center; gap:8px; }
@@ -837,8 +841,9 @@ function renderWfMenu(){
       <span style="flex:1"><span class="wf-opt-name" style="display:block">${w.name}</span>
         <span class="wf-opt-meta">${w.leads.length} leads · ${w.steps.length} steps</span></span>
       <span class="check">${icon('check')}</span></button>`;
-  }).join('');
+  }).join('') + `<div class="pop-sep" style="margin:6px 4px"></div><button class="wf-new" id="wfNewBtn"><span class="wf-new-ico">${icon('plus')}</span> New workflow</button>`;
   $('#wfMenu').querySelectorAll('.wf-opt').forEach(b=> b.onclick = ()=>{ selectWf(b.dataset.wf); $('#wfSelect').classList.remove('open'); });
+  $('#wfNewBtn').onclick = ()=>{ $('#wfSelect').classList.remove('open'); openNewWorkflow(); };
 }
 $('#wfTrigger').onclick = (e)=>{ e.stopPropagation(); $('#wfSelect').classList.toggle('open'); };
 document.addEventListener('click', ()=> $('#wfSelect').classList.remove('open'));
@@ -1150,6 +1155,39 @@ function openAddLead(){ openModal(`
 $('#addLeadBtn').onclick = openAddLead;
 function doAddLead(){ const name=$('#m_name').value.trim()||'New Lead'; const co=$('#m_co').value.trim()||'—'; const src=$('#m_src').value;
   wf().leads.unshift(L(name,co,src,initials(name),'progress',0,'just now')); closeModal(); renderWfMenu(); forcedState='normal'; render(); toast(`Added “${name}” to ${wf().steps[0].name}`); }
+
+/* ── create new workflow / pipeline (starts as a Draft) ── */
+let wfSeq = 0;
+const WF_TEMPLATES = {
+  sales:   ['New Lead','Contacted','Qualified','Proposal Sent','Closed Won'],
+  onboard: ['Kickoff','Setup','Training','Go-Live'],
+  simple:  ['To Do','In Progress','Done'],
+  minimal: ['Stage 1','Stage 2']
+};
+function openNewWorkflow(){
+  openModal(`
+    <h3>Create workflow</h3><p>A new workflow starts as a <b>Draft</b>. Pick a starter set of steps, then publish it to operate.</p>
+    <div class="field"><label>Workflow name <span style="color:var(--terminal)">*</span></label><input id="nw_name" placeholder="e.g. Partner Onboarding"></div>
+    <div class="field"><label>Starter steps</label><select id="nw_tpl">
+      <option value="sales">Sales pipeline — New Lead → Closed Won (5)</option>
+      <option value="onboard">Onboarding — Kickoff → Go-Live (4)</option>
+      <option value="simple">Simple — To Do · In Progress · Done (3)</option>
+      <option value="minimal">Minimal — 2 stages</option>
+    </select></div>
+    <div id="nw_err" class="field-err" style="display:none"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button><button class="btn-primary" onclick="createWorkflow()">Create workflow</button></div>`);
+  setTimeout(()=>{ const n=$('#nw_name'); if(n) n.focus(); }, 40);
+}
+function createWorkflow(){
+  const name=$('#nw_name').value.trim();
+  const err=$('#nw_err');
+  if(!name){ err.textContent='Workflow name is required'; err.style.display='block'; $('#nw_name').classList.add('err'); return; }
+  if(WORKFLOWS.some(w=>w.name.trim().toLowerCase()===name.toLowerCase())){ err.textContent='A workflow with this name already exists'; err.style.display='block'; $('#nw_name').classList.add('err'); return; }
+  const id='wf-new-'+(++wfSeq);
+  const steps=(WF_TEMPLATES[$('#nw_tpl').value]||WF_TEMPLATES.simple).map(n=>({ name:n, statuses:defaultStatuses() }));
+  WORKFLOWS.push({ id, name, state:'draft', steps, leads:[] });
+  closeModal(); renderWfMenu(); selectWf(id); toast(`Workflow “${name}” created — Draft. Publish it to start.`);
+}
 
 function openModal(html){ const m=$('#modal'); m.classList.remove('lg'); m.innerHTML=html; m.classList.add('show'); $('#scrim').classList.add('show'); }
 function anyOverlay(){ return $('#drawer').classList.contains('show')||$('#setupDrawer').classList.contains('show')||$('#modal').classList.contains('show'); }
